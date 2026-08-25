@@ -26,16 +26,17 @@ async function runUnikraft(image: string, token: string, metro: string, portsRaw
   if (name) args.push('--name', name);
   const envRaw = String(formData.get('env') || '');
   envRaw.split('\n').map((value) => value.trim()).filter(Boolean).forEach((value) => args.push('--env', value));
-  if (disk > 0) {
-    const sizeGiB = Math.max(1, Math.ceil(disk / 1024));
-    args.push('--set', `volumes.0.at=${volumeAt}`);
-    args.push('--set', `volumes.0.size=${sizeGiB}GiB`);
-  }
-
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'unikraft-login-'));
   const tokenPath = path.join(dir, 'token');
   const configPath = path.join(dir, 'config');
   await fs.writeFile(tokenPath, token, { mode: 0o600 });
+  if (disk > 0) {
+    if (!volumeAt.startsWith('/') || /[\r\n]/.test(volumeAt)) throw new Error('Invalid volume mount path.');
+    const sizeGiB = Math.max(1, Math.ceil(disk / 1024));
+    const fieldsPath = path.join(dir, 'instance.yaml');
+    await fs.writeFile(fieldsPath, JSON.stringify({ volumes: [{ at: volumeAt, size: `${sizeGiB}GiB` }] }));
+    args.push('--load', fieldsPath);
+  }
   try {
     const env = { ...process.env, KRAFTCLOUD_TOKEN: token };
     await execFileAsync('unikraft', ['--config', configPath, 'login', '--no-browser', '--token', tokenPath], { env, timeout: 120000 });
