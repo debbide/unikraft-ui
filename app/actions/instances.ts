@@ -20,24 +20,39 @@ async function runUnikraft(image: string, token: string, metro: string, portsRaw
   const memory = Number(formData.get('memory_mb') || 512);
   const vcpus = Number(formData.get('vcpu') || 1);
   const name = String(formData.get('name') || '').trim();
-  const disk = Number(formData.get('disk_mb') || 0);
-  const volumeAt = String(formData.get('volume_at') || '/data').trim();
-  const args = ['--config', '', 'run', '--metro', metro, '--publish', publish, '--image', image, '--memory', `${memory}MiB`, '--vcpus', String(vcpus), '--autostart'];
-  if (name) args.push('--name', name);
-  const envRaw = String(formData.get('env') || '');
-  envRaw.split('\n').map((value) => value.trim()).filter(Boolean).forEach((value) => args.push('--env', value));
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'unikraft-login-'));
   const tokenPath = path.join(dir, 'token');
   const configPath = path.join(dir, 'config');
   await fs.writeFile(tokenPath, token, { mode: 0o600 });
-  if (disk > 0) {
-    if (!volumeAt.startsWith('/') || /[\r\n]/.test(volumeAt)) throw new Error('Invalid volume mount path.');
-    const sizeGiB = Math.max(1, Math.ceil(disk / 1024));
-    args.push('--volume', `:${volumeAt}:size=${sizeGiB}GiB`);
-  }
   try {
     const env = { ...process.env, KRAFTCLOUD_TOKEN: token };
     await execFileAsync('unikraft', ['--config', configPath, 'login', '--no-browser', '--token', tokenPath], { env, timeout: 120000 });
+    await execFileAsync('docker', ['pull', image], { env, timeout: 30 * 60 * 1000, maxBuffer: 20 * 1024 * 1024 });
+    const inspect = await execFileAsync('docker', ['image', 'inspect', image], { env, maxBuffer: 5 * 1024 * 1024 });
+    const metadata = JSON.parse(inspect.stdout)[0]?.Config || {};
+    const command = [...(Array.isArray(metadata.Entrypoint) ? metadata.Entrypoint : []), ...(Array.isArray(metadata.Cmd) ? metadata.Cmd : [])];
+    if (command.length === 0) throw new Error('Docker image has no Entrypoint or Cmd.');
+    await fs.writeFile(path.join(dir, 'Dockerfile'), `FROM ${image}\n`);
+    await fs.writeFile(path.join(dir, 'Kraftfile'), [
+      'spec: v0.7', '', 'runtime: base-compat:latest', '', 'rootfs:',
+      '  source: ./Dockerfile', '  format: erofs', '', `cmd: ${JSON.stringify(command)}`,
+    ].join('\n'));
+    const namespace = process.env.UNIKRAFT_IMAGE_NAMESPACE || 'dghdnk';
+    const output = `${namespace}/docker-${Date.now()}:latest`;
+    await execFileAsync('unikraft', ['--config', configPath, 'build', dir, '--output', output], { env, timeout: 30 * 60 * 1000, maxBuffer: 20 * 1024 * 1024 });
+    const args = ['--config', configPath, 'run', '--metro', metro, '--publish', publish, '--image', output, '--memory', `${memory}MiB`, '--vcpus', String(vcpus), '--autostart'];
+    if (name) args.push('--name', name);
+    const envRaw = String(formData.get('env') || '');
+    envRaw.split('\n').map((value) => value.trim()).filter(Boolean).forEach((value) => args.push('--env', value));
+    const disk = Number(formData.get('disk_mb') || 0);
+    if (disk > 0) {
+      const volumeAt = String(formData.get('volume_at') || '/data').trim();
+      if (!volumeAt.startsWith('/') || /[\r\n]/.test(volumeAt)) throw new Error('Invalid volume mount path.');
+      const volumeName = `data-${Date.now()}`;
+      const size = `${Math.max(1, Math.ceil(disk / 1024))}G`;
+      await execFileAsync('unikraft', ['--config', configPath, 'volumes', 'create', '--metro', metro, '--name', volumeName, '--size', size], { env, timeout: 120000 });
+      args.push('--volume', `${volumeName}:${volumeAt}`);
+    }
     const { stdout, stderr } = await execFileAsync(
       'unikraft',
       args.map((arg) => arg === '' ? configPath : arg),
