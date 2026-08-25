@@ -68,9 +68,11 @@ async function runUnikraft(image: string, token: string, metro: string, portsRaw
     if (disk > 0) {
       const volumeAt = String(formData.get('volume_at') || '/data').trim();
       if (!volumeAt.startsWith('/') || /[\r\n]/.test(volumeAt)) throw new Error('Invalid volume mount path.');
-      const volumeName = `data-${Date.now()}`;
+      const volumeName = `data-${image.split('/').pop()?.split(':')[0].replace(/[^a-zA-Z0-9-]/g, '-') || 'app'}`;
       const size = `${Math.max(1, Math.ceil(disk / 1024))}G`;
-      await execFileAsync('unikraft', ['--config', configPath, 'volumes', 'create', '--metro', metro, '--name', volumeName, '--size', size], { env, timeout: 120000 });
+      await execFileAsync('unikraft', ['--config', configPath, 'volumes', 'get', volumeName, '--metro', metro], { env, timeout: 120000 }).catch(async () => {
+        await execFileAsync('unikraft', ['--config', configPath, 'volumes', 'create', '--metro', metro, '--name', volumeName, '--size', size], { env, timeout: 120000 });
+      });
       args.push('--volume', `${volumeName}:${volumeAt}`);
     }
     const { stdout, stderr } = await execFileAsync(
