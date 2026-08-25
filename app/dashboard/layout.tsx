@@ -1,6 +1,6 @@
 import { ReactNode } from 'react';
 import { SidebarProvider, Sidebar, SidebarContent, SidebarHeader, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarFooter } from '@/components/ui/sidebar';
-import { Server, HardDrive, LayoutDashboard, LogOut } from 'lucide-react';
+import { Server, HardDrive, LayoutDashboard, LogOut, PackageOpen } from 'lucide-react';
 import { logout } from '@/app/actions/auth';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
@@ -31,6 +31,12 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 <SidebarMenuButton render={<Link href="/dashboard/volumes" className="flex items-center gap-2" />}>
                   <HardDrive className="w-5 h-5" />
                   <span>存储 (Volumes)</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton render={<Link href="/dashboard/images" className="flex items-center gap-2" />}>
+                  <PackageOpen className="w-5 h-5" />
+                  <span>临时镜像</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>

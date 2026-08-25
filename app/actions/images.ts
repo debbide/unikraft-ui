@@ -1,0 +1,58 @@
+'use server';
+
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+import { revalidatePath } from 'next/cache';
+import { getToken } from './auth';
+
+const execFileAsync = promisify(execFile);
+const TEMP_IMAGE_PATTERN = /(?:^|\/)\d{10,}(?::[^/]+)?$/;
+
+export interface TemporaryImage { reference: string; size: string; createdAt: string }
+
+function env(token: string): NodeJS.ProcessEnv {
+  return { ...process.env, KRAFTCLOUD_TOKEN: token, KRAFTKIT_NO_WARN_CLOUD_DEPRECATION: '1' };
+}
+
+function normalizeRows(value: unknown): Record<string, unknown>[] {
+  if (Array.isArray(value)) return value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object');
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    for (const key of ['images', 'items', 'data']) if (Array.isArray(record[key])) return normalizeRows(record[key]);
+  }
+  return [];
+}
+
+function text(value: unknown): string { return typeof value === 'string' || typeof value === 'number' ? String(value) : ''; }
+
+function normalize(row: Record<string, unknown>): TemporaryImage | null {
+  const repository = text(row.repository || row.name || row.image || row.reference);
+  const tag = text(row.tag);
+  const reference = tag && !repository.endsWith(`:${tag}`) ? `${repository}:${tag}` : repository;
+  if (!reference || !TEMP_IMAGE_PATTERN.test(reference)) return null;
+  return { reference, size: text(row.size || row.size_bytes || row.bytes) || '-', createdAt: text(row.created_at || row.createdAt || row.created) || '-' };
+}
+
+export async function listTemporaryImages(): Promise<{ images: TemporaryImage[]; error?: string }> {
+  const token = await getToken();
+  if (!token) return { images: [], error: 'Unauthorized' };
+  try {
+    const { stdout } = await execFileAsync('kraft', ['cloud', 'image', 'ls', '--output', 'json'], { env: env(token), maxBuffer: 5 * 1024 * 1024 });
+    return { images: normalizeRows(JSON.parse(stdout)).map(normalize).filter((image): image is TemporaryImage => image !== null) };
+  } catch (error) {
+    return { images: [], error: error instanceof Error ? error.message : 'Unable to list images.' };
+  }
+}
+
+export async function deleteTemporaryImage(reference: string): Promise<{ success?: true; error?: string }> {
+  const token = await getToken();
+  if (!token) return { error: 'Unauthorized' };
+  if (!TEMP_IMAGE_PATTERN.test(reference)) return { error: 'Only temporary images can be deleted.' };
+  try {
+    await execFileAsync('kraft', ['cloud', 'image', 'delete', reference], { env: env(token), maxBuffer: 5 * 1024 * 1024 });
+    revalidatePath('/dashboard/images');
+    return { success: true };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Unable to delete image.' };
+  }
+}
