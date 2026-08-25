@@ -26,7 +26,10 @@ async function runUnikraft(image: string, token: string, metro: string, portsRaw
   if (name) args.push('--name', name);
   const envRaw = String(formData.get('env') || '');
   envRaw.split('\n').map((value) => value.trim()).filter(Boolean).forEach((value) => args.push('--env', value));
-  if (disk > 0) args.push('--volume', `data:${volumeAt}:size=${disk}MiB`);
+  if (disk > 0) {
+    const sizeGiB = Math.max(1, Math.ceil(disk / 1024));
+    args.push('--volume', `data:${volumeAt}:size=${sizeGiB}GiB`);
+  }
 
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'unikraft-login-'));
   const tokenPath = path.join(dir, 'token');
