@@ -11,6 +11,22 @@ import path from 'path';
 
 const execFileAsync = promisify(execFile);
 
+function imageReferences(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap(imageReferences);
+  if (!value || typeof value !== 'object') return [];
+  const record = value as Record<string, unknown>;
+  return (typeof record.ref === 'string' ? [record.ref] : []).concat(Object.values(record).flatMap(imageReferences));
+}
+
+async function cleanupGeneratedImages(configPath: string, env: NodeJS.ProcessEnv, namespace: string): Promise<void> {
+  const { stdout } = await execFileAsync('unikraft', ['--config', configPath, 'image', 'list', '--output', 'json'], { env, timeout: 120000, maxBuffer: 5 * 1024 * 1024 });
+  const references = imageReferences(JSON.parse(stdout)).filter((reference) => {
+    const name = reference.replace(/^unikraft\.io\//, '');
+    return name.startsWith(`${namespace}/converted-`) || new RegExp(`^${namespace}/(?:docker-)?\\d{10,}(?::|@|$)`).test(name);
+  });
+  await Promise.all(references.map((reference) => execFileAsync('unikraft', ['--config', configPath, 'image', 'delete', reference], { env, timeout: 120000 }).catch(() => undefined)));
+}
+
 async function runUnikraft(image: string, token: string, metro: string, portsRaw: string, formData: FormData): Promise<void> {
   if (/[\r\n]/.test(image)) throw new Error('Invalid Docker image reference.');
   const port = portsRaw.split('\n').map((value) => value.trim()).find(Boolean);
@@ -38,7 +54,11 @@ async function runUnikraft(image: string, token: string, metro: string, portsRaw
       '  source: ./Dockerfile', '  format: erofs', '', `cmd: ${JSON.stringify(command)}`,
     ].join('\n'));
     const namespace = process.env.UNIKRAFT_IMAGE_NAMESPACE || 'dghdnk';
-    const output = `${namespace}/docker-${Date.now()}:latest`;
+    const imageName = image.split('/').pop()?.replace(/[^a-zA-Z0-9_.-]/g, '-') || 'app';
+    const output = `${namespace}/converted-${imageName}:latest`;
+    const outputRef = `unikraft.io/${output}`;
+    await execFileAsync('unikraft', ['--config', configPath, 'image', 'delete', outputRef], { env, timeout: 120000 }).catch(() => undefined);
+    await cleanupGeneratedImages(configPath, env, namespace);
     await execFileAsync('unikraft', ['--config', configPath, 'build', dir, '--output', output], { env, timeout: 30 * 60 * 1000, maxBuffer: 20 * 1024 * 1024 });
     const args = ['--config', configPath, 'run', '--metro', metro, '--publish', publish, '--image', output, '--memory', `${memory}MiB`, '--vcpus', String(vcpus), '--autostart'];
     if (name) args.push('--name', name);

@@ -10,7 +10,7 @@ import path from 'path';
 
 const execFileAsync = promisify(execFile);
 const UNIKRAFT_CLI = process.env.UNIKRAFT_CLI || 'unikraft';
-const TEMP_IMAGE_PATTERN = /(?:^|\/)\d{10,}(?::[^/]+)?$/;
+const TEMP_IMAGE_PATTERN = /(?:^|\/)(?:\d{10,}|docker-\d{10,}|converted-[^/:]+)(?::[^/]+)?$/;
 const IMAGE_METROS = ['dal', 'sfo', 'was', 'fra', 'sin'] as const;
 
 export interface TemporaryImage { reference: string; metro: string; size: string; createdAt: string }
@@ -84,7 +84,7 @@ export async function deleteTemporaryImage(reference: string, metro: string): Pr
   try {
     await withLogin(token, (configPath, env) => execFileAsync(
       UNIKRAFT_CLI,
-      ['--config', configPath, 'image', 'remove', '--metro', metro, reference],
+      ['--config', configPath, 'image', 'delete', reference],
       { env, maxBuffer: 5 * 1024 * 1024, timeout: 120000 },
     ).then(() => undefined));
     revalidatePath('/dashboard/images');
