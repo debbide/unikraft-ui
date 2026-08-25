@@ -31,6 +31,7 @@ export async function fetchUnikraft<T>(
 
   const response = await fetch(url, {
     ...options,
+    signal: options.signal ?? AbortSignal.timeout(10000),
     headers,
   });
 
