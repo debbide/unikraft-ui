@@ -33,12 +33,25 @@ function normalize(row: Record<string, unknown>): TemporaryImage | null {
   return { reference, size: text(row.size || row.size_bytes || row.bytes) || '-', createdAt: text(row.created_at || row.createdAt || row.created) || '-' };
 }
 
+function parseTable(output: string): TemporaryImage[] {
+  return output.split(/\r?\n/).flatMap((line) => {
+    const match = line.trim().match(/^(dghdnk\/\d{10,})\s+(\S+)\s+(\S+)$/);
+    if (!match) return [];
+    return [{ reference: `${match[1]}:${match[2]}`, size: match[3], createdAt: '-' }];
+  });
+}
+
 export async function listTemporaryImages(): Promise<{ images: TemporaryImage[]; error?: string }> {
   const token = await getToken();
   if (!token) return { images: [], error: 'Unauthorized' };
   try {
-    const { stdout } = await execFileAsync('kraft', ['cloud', 'image', 'ls', '--output', 'json'], { env: env(token), maxBuffer: 5 * 1024 * 1024 });
-    return { images: normalizeRows(JSON.parse(stdout)).map(normalize).filter((image): image is TemporaryImage => image !== null) };
+    const { stdout } = await execFileAsync('kraft', ['cloud', 'image', 'ls'], { env: env(token), maxBuffer: 5 * 1024 * 1024 });
+    try {
+      const images = normalizeRows(JSON.parse(stdout)).map(normalize).filter((image): image is TemporaryImage => image !== null);
+      return { images: images.length > 0 ? images : parseTable(stdout) };
+    } catch {
+      return { images: parseTable(stdout) };
+    }
   } catch (error) {
     return { images: [], error: error instanceof Error ? error.message : 'Unable to list images.' };
   }
