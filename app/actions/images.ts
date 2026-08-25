@@ -13,7 +13,7 @@ const IMAGE_METROS = ['dal', 'sfo', 'was', 'fra', 'sin'] as const;
 export interface TemporaryImage { reference: string; metro: string; size: string; createdAt: string }
 
 function env(token: string): NodeJS.ProcessEnv {
-  return { ...process.env, KRAFTCLOUD_TOKEN: token, KRAFTKIT_NO_WARN_CLOUD_DEPRECATION: '1' };
+  return { ...process.env, UKC_TOKEN: token };
 }
 
 function normalizeRows(value: unknown): Record<string, unknown>[] {
@@ -50,7 +50,7 @@ export async function listTemporaryImages(): Promise<{ images: TemporaryImage[];
   try {
     const results = await Promise.all(IMAGE_METROS.map(async (metro) => {
       try {
-        const { stdout } = await execFileAsync(UNIKRAFT_CLI, ['cloud', 'image', 'ls', '--metro', metro], { env: env(token), maxBuffer: 5 * 1024 * 1024 });
+        const { stdout } = await execFileAsync(UNIKRAFT_CLI, ['image', 'list', '--metro', metro], { env: env(token), maxBuffer: 5 * 1024 * 1024 });
         try {
           const images = normalizeRows(JSON.parse(stdout)).map((row) => normalize(row, metro)).filter((image): image is TemporaryImage => image !== null);
           return images.length > 0 ? images : parseTable(stdout, metro);
@@ -71,7 +71,7 @@ export async function deleteTemporaryImage(reference: string, metro: string): Pr
   try {
     await execFileAsync(
       UNIKRAFT_CLI,
-      ['cloud', 'image', 'delete', '--metro', metro, reference],
+      ['image', 'remove', '--metro', metro, reference],
       { env: env(token), maxBuffer: 5 * 1024 * 1024, timeout: 120000 },
     );
     revalidatePath('/dashboard/images');
