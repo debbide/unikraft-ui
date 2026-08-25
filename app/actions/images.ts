@@ -67,6 +67,11 @@ export async function deleteTemporaryImage(reference: string): Promise<{ success
     revalidatePath('/dashboard/images');
     return { success: true };
   } catch (error) {
-    return { error: error instanceof Error ? error.message : 'Unable to delete image.' };
+    const details = [
+      error instanceof Error ? error.message : '',
+      typeof error === 'object' && error !== null && 'stdout' in error ? String(error.stdout || '') : '',
+      typeof error === 'object' && error !== null && 'stderr' in error ? String(error.stderr || '') : '',
+    ].filter(Boolean).join('\n').trim();
+    return { error: details || 'Unable to delete image.' };
   }
 }
