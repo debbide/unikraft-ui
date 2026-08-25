@@ -1,12 +1,34 @@
 'use server';
 
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import { revalidatePath } from 'next/cache';
 import { getToken } from './auth';
 
 const execFileAsync = promisify(execFile);
 const TEMP_IMAGE_PATTERN = /(?:^|\/)\d{10,}(?::[^/]+)?$/;
+
+function deleteImage(reference: string, token: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('kraft', ['cloud', 'image', 'delete', reference], { env: env(token) });
+    const timeout = setTimeout(() => child.kill(), 120000);
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
+    child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      clearTimeout(timeout);
+      if (code === 0) return resolve();
+      const error = new Error(`kraft cloud image delete exited with code ${code}`) as Error & { stdout: string; stderr: string };
+      error.stdout = stdout;
+      error.stderr = stderr;
+      reject(error);
+    });
+    child.stdin.write('y\n');
+    child.stdin.end();
+  });
+}
 
 export interface TemporaryImage { reference: string; size: string; createdAt: string }
 
@@ -63,7 +85,7 @@ export async function deleteTemporaryImage(reference: string): Promise<{ success
   if (!token) return { error: 'Unauthorized' };
   if (!TEMP_IMAGE_PATTERN.test(reference)) return { error: 'Only temporary images can be deleted.' };
   try {
-    await execFileAsync('kraft', ['cloud', 'image', 'delete', '--force', reference], { env: env(token), maxBuffer: 5 * 1024 * 1024, timeout: 120000 });
+    await deleteImage(reference, token);
     revalidatePath('/dashboard/images');
     return { success: true };
   } catch (error) {
