@@ -33,9 +33,7 @@ async function runUnikraft(image: string, token: string, metro: string, portsRaw
   if (disk > 0) {
     if (!volumeAt.startsWith('/') || /[\r\n]/.test(volumeAt)) throw new Error('Invalid volume mount path.');
     const sizeGiB = Math.max(1, Math.ceil(disk / 1024));
-    const fieldsPath = path.join(dir, 'instance.yaml');
-    await fs.writeFile(fieldsPath, JSON.stringify({ volumes: [{ at: volumeAt, size: `${sizeGiB}GiB` }] }));
-    args.push('--load', fieldsPath);
+    args.push('--volume', `:${volumeAt}:size=${sizeGiB}GiB`);
   }
   try {
     const env = { ...process.env, KRAFTCLOUD_TOKEN: token };
