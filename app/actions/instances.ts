@@ -11,12 +11,23 @@ import path from 'path';
 
 const execFileAsync = promisify(execFile);
 
-async function runUnikraft(image: string, token: string, metro: string, portsRaw: string): Promise<void> {
+async function runUnikraft(image: string, token: string, metro: string, portsRaw: string, formData: FormData): Promise<void> {
   if (/[\r\n]/.test(image)) throw new Error('Invalid Docker image reference.');
   const port = portsRaw.split('\n').map((value) => value.trim()).find(Boolean);
   if (!port) throw new Error('At least one published port is required.');
 
   const publish = port.replace(/^(\d+):(\d+)$/, '$1:$2/http+tls');
+  const memory = Number(formData.get('memory_mb') || 512);
+  const vcpus = Number(formData.get('vcpu') || 1);
+  const name = String(formData.get('name') || '').trim();
+  const disk = Number(formData.get('disk_mb') || 0);
+  const volumeAt = String(formData.get('volume_at') || '/data').trim();
+  const args = ['--config', '', 'run', '--metro', metro, '--publish', publish, '--image', image, '--memory', `${memory}MiB`, '--vcpus', String(vcpus), '--autostart'];
+  if (name) args.push('--name', name);
+  const envRaw = String(formData.get('env') || '');
+  envRaw.split('\n').map((value) => value.trim()).filter(Boolean).forEach((value) => args.push('--env', value));
+  if (disk > 0) args.push('--volume', `data:${volumeAt}:size=${disk}MiB`);
+
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'unikraft-login-'));
   const tokenPath = path.join(dir, 'token');
   const configPath = path.join(dir, 'config');
@@ -26,7 +37,7 @@ async function runUnikraft(image: string, token: string, metro: string, portsRaw
     await execFileAsync('unikraft', ['--config', configPath, 'login', '--no-browser', '--token', tokenPath], { env, timeout: 120000 });
     const { stdout, stderr } = await execFileAsync(
       'unikraft',
-      ['--config', configPath, 'run', '--metro', metro, '--publish', publish, '--image', image],
+      args.map((arg) => arg === '' ? configPath : arg),
       { env, timeout: 30 * 60 * 1000, maxBuffer: 20 * 1024 * 1024 },
     );
     console.log(`[Unikraft] run stdout: ${stdout}`);
@@ -47,7 +58,7 @@ export async function deployInstance(prevState: any, formData: FormData) {
 
   if (!image.startsWith('unikraft.io') && !image.startsWith('index.unikraft.io')) {
     try {
-      await runUnikraft(image, token, metro, portsRaw);
+      await runUnikraft(image, token, metro, portsRaw, formData);
       revalidatePath('/dashboard/instances');
       return { success: true };
     } catch (error) {
