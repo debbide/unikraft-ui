@@ -13,7 +13,7 @@ const IMAGE_METROS = ['dal', 'sfo', 'was', 'fra', 'sin'] as const;
 export interface TemporaryImage { reference: string; metro: string; size: string; createdAt: string }
 
 function env(token: string): NodeJS.ProcessEnv {
-  return { ...process.env, UKC_TOKEN: token };
+  return { ...process.env, KRAFTCLOUD_TOKEN: token };
 }
 
 function normalizeRows(value: unknown): Record<string, unknown>[] {

@@ -17,7 +17,7 @@ async function runUnikraft(image: string, token: string, metro: string, portsRaw
   const { stdout, stderr } = await execFileAsync(
     'unikraft',
     ['run', '--metro', metro, '--publish', publish, '--image', image],
-    { env: { ...process.env, UKC_TOKEN: token }, timeout: 30 * 60 * 1000, maxBuffer: 20 * 1024 * 1024 },
+    { env: { ...process.env, KRAFTCLOUD_TOKEN: token }, timeout: 30 * 60 * 1000, maxBuffer: 20 * 1024 * 1024 },
   );
   console.log(`[Unikraft] run stdout: ${stdout}`);
   if (stderr) console.error(`[Unikraft] run stderr: ${stderr}`);
