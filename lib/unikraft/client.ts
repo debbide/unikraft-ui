@@ -1,7 +1,7 @@
 import { ProxyAgent, setGlobalDispatcher } from 'undici';
 
 // 如果环境变量里有 proxy 设置，则全局配置给 Node.js 的原生 fetch
-const proxyUrl = process.env.https_proxy || process.env.HTTPS_PROXY || process.env.http_proxy || 'http://127.0.0.1:18999';
+const proxyUrl = process.env.https_proxy || process.env.HTTPS_PROXY || process.env.http_proxy || process.env.HTTP_PROXY;
 if (proxyUrl) {
   try {
     const dispatcher = new ProxyAgent(proxyUrl);

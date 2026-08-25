@@ -45,7 +45,7 @@ async function convertDockerToUnikraft(image: string, token: string, metro: stri
     // 我们设置不警告 deprecated 否则会污染输出
     env.KRAFTKIT_NO_WARN_CLOUD_DEPRECATION = '1';
 
-    let deployCmd = `kraft cloud deploy --metro ${metro} -M ${memory_mb} -V ${vcpu}`;
+    let deployCmd = `kraft cloud deploy --timeout 10m --metro ${metro} -M ${memory_mb} -V ${vcpu}`;
     if (name) deployCmd += ` --name ${name}`;
     
     if (portsRaw) {
@@ -69,7 +69,7 @@ async function convertDockerToUnikraft(image: string, token: string, metro: stri
     const { stdout, stderr } = await execAsync(cmd, { 
       cwd: tmpDir, 
       env,
-      timeout: 10 * 60 * 1000,
+      timeout: 600000,
       maxBuffer: 20 * 1024 * 1024,
     });
 
