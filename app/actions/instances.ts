@@ -5,6 +5,9 @@ import { getToken } from './auth';
 import { revalidatePath } from 'next/cache';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import fs from 'fs/promises';
+import os from 'os';
+import path from 'path';
 
 const execFileAsync = promisify(execFile);
 
@@ -14,13 +17,23 @@ async function runUnikraft(image: string, token: string, metro: string, portsRaw
   if (!port) throw new Error('At least one published port is required.');
 
   const publish = port.replace(/^(\d+):(\d+)$/, '$1:$2/http+tls');
-  const { stdout, stderr } = await execFileAsync(
-    'unikraft',
-    ['run', '--metro', metro, '--publish', publish, '--image', image],
-    { env: { ...process.env, KRAFTCLOUD_TOKEN: token }, timeout: 30 * 60 * 1000, maxBuffer: 20 * 1024 * 1024 },
-  );
-  console.log(`[Unikraft] run stdout: ${stdout}`);
-  if (stderr) console.error(`[Unikraft] run stderr: ${stderr}`);
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'unikraft-login-'));
+  const tokenPath = path.join(dir, 'token');
+  const configPath = path.join(dir, 'config');
+  await fs.writeFile(tokenPath, token, { mode: 0o600 });
+  try {
+    const env = { ...process.env, KRAFTCLOUD_TOKEN: token };
+    await execFileAsync('unikraft', ['--config', configPath, 'login', '--no-browser', '--token', tokenPath], { env, timeout: 120000 });
+    const { stdout, stderr } = await execFileAsync(
+      'unikraft',
+      ['--config', configPath, 'run', '--metro', metro, '--publish', publish, '--image', image],
+      { env, timeout: 30 * 60 * 1000, maxBuffer: 20 * 1024 * 1024 },
+    );
+    console.log(`[Unikraft] run stdout: ${stdout}`);
+    if (stderr) console.error(`[Unikraft] run stderr: ${stderr}`);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
 }
 
 export async function deployInstance(prevState: any, formData: FormData) {

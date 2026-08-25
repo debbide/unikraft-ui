@@ -4,6 +4,9 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { revalidatePath } from 'next/cache';
 import { getToken } from './auth';
+import fs from 'fs/promises';
+import os from 'os';
+import path from 'path';
 
 const execFileAsync = promisify(execFile);
 const UNIKRAFT_CLI = process.env.UNIKRAFT_CLI || 'unikraft';
@@ -12,8 +15,18 @@ const IMAGE_METROS = ['dal', 'sfo', 'was', 'fra', 'sin'] as const;
 
 export interface TemporaryImage { reference: string; metro: string; size: string; createdAt: string }
 
-function env(token: string): NodeJS.ProcessEnv {
-  return { ...process.env, KRAFTCLOUD_TOKEN: token };
+async function withLogin<T>(token: string, action: (configPath: string, env: NodeJS.ProcessEnv) => Promise<T>): Promise<T> {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'unikraft-login-'));
+  const tokenPath = path.join(dir, 'token');
+  const configPath = path.join(dir, 'config');
+  await fs.writeFile(tokenPath, token, { mode: 0o600 });
+  const env = { ...process.env, KRAFTCLOUD_TOKEN: token };
+  try {
+    await execFileAsync(UNIKRAFT_CLI, ['--config', configPath, 'login', '--no-browser', '--token', tokenPath], { env, timeout: 120000 });
+    return await action(configPath, env);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
 }
 
 function normalizeRows(value: unknown): Record<string, unknown>[] {
@@ -48,15 +61,15 @@ export async function listTemporaryImages(): Promise<{ images: TemporaryImage[];
   const token = await getToken();
   if (!token) return { images: [], error: 'Unauthorized' };
   try {
-    const results = await Promise.all(IMAGE_METROS.map(async (metro) => {
+    const results = await withLogin(token, async (configPath, env) => Promise.all(IMAGE_METROS.map(async (metro) => {
       try {
-        const { stdout } = await execFileAsync(UNIKRAFT_CLI, ['image', 'list', '--metro', metro], { env: env(token), maxBuffer: 5 * 1024 * 1024 });
+        const { stdout } = await execFileAsync(UNIKRAFT_CLI, ['--config', configPath, 'image', 'list', '--metro', metro], { env, maxBuffer: 5 * 1024 * 1024 });
         try {
           const images = normalizeRows(JSON.parse(stdout)).map((row) => normalize(row, metro)).filter((image): image is TemporaryImage => image !== null);
           return images.length > 0 ? images : parseTable(stdout, metro);
         } catch { return parseTable(stdout, metro); }
       } catch { return []; }
-    }));
+    })));
     return { images: results.flat() };
   } catch (error) {
     return { images: [], error: error instanceof Error ? error.message : 'Unable to list images.' };
@@ -69,11 +82,11 @@ export async function deleteTemporaryImage(reference: string, metro: string): Pr
   if (!TEMP_IMAGE_PATTERN.test(reference)) return { error: 'Only temporary images can be deleted.' };
   if (!IMAGE_METROS.includes(metro as (typeof IMAGE_METROS)[number])) return { error: 'Invalid metro.' };
   try {
-    await execFileAsync(
+    await withLogin(token, (configPath, env) => execFileAsync(
       UNIKRAFT_CLI,
-      ['image', 'remove', '--metro', metro, reference],
-      { env: env(token), maxBuffer: 5 * 1024 * 1024, timeout: 120000 },
-    );
+      ['--config', configPath, 'image', 'remove', '--metro', metro, reference],
+      { env, maxBuffer: 5 * 1024 * 1024, timeout: 120000 },
+    ).then(() => undefined));
     revalidatePath('/dashboard/images');
     return { success: true };
   } catch (error) {
