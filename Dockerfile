@@ -10,12 +10,13 @@ RUN case "${TARGETARCH}" in \
       arm64) KRAFT_ARCH=arm64 ;; \
       *) echo "Unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; \
     esac && \
-    curl -sSfL "https://github.com/unikraft/kraftkit/releases/download/v${KRAFTKIT_VERSION}/kraft_${KRAFTKIT_VERSION}_linux_${KRAFT_ARCH}.tar.gz" -o kraft.tar.gz && \
-    tar -xzf kraft.tar.gz && \
-    mv kraft /usr/local/bin/ && \
-    rm kraft.tar.gz
+    curl -sSfL "https://github.com/unikraft/kraftkit/releases/download/v${KRAFTKIT_VERSION}/unikraft_${KRAFTKIT_VERSION}_linux_${KRAFT_ARCH}.tar.gz" -o unikraft.tar.gz && \
+    tar -xzf unikraft.tar.gz && \
+    mv unikraft /usr/local/bin/ && \
+    rm unikraft.tar.gz
 
 ENV PATH="/root/.local/bin:${PATH}"
+ENV UNIKRAFT_CLI=unikraft
 WORKDIR /app
 
 COPY package.json package-lock.json ./

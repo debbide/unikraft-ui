@@ -6,6 +6,7 @@ import { revalidatePath } from 'next/cache';
 import { getToken } from './auth';
 
 const execFileAsync = promisify(execFile);
+const UNIKRAFT_CLI = process.env.UNIKRAFT_CLI || 'unikraft';
 const TEMP_IMAGE_PATTERN = /(?:^|\/)\d{10,}(?::[^/]+)?$/;
 const IMAGE_METROS = ['dal', 'sfo', 'was', 'fra', 'sin'] as const;
 
@@ -49,7 +50,7 @@ export async function listTemporaryImages(): Promise<{ images: TemporaryImage[];
   try {
     const results = await Promise.all(IMAGE_METROS.map(async (metro) => {
       try {
-        const { stdout } = await execFileAsync('kraft', ['cloud', 'image', 'ls', '--metro', metro], { env: env(token), maxBuffer: 5 * 1024 * 1024 });
+        const { stdout } = await execFileAsync(UNIKRAFT_CLI, ['cloud', 'image', 'ls', '--metro', metro], { env: env(token), maxBuffer: 5 * 1024 * 1024 });
         try {
           const images = normalizeRows(JSON.parse(stdout)).map((row) => normalize(row, metro)).filter((image): image is TemporaryImage => image !== null);
           return images.length > 0 ? images : parseTable(stdout, metro);
@@ -69,7 +70,7 @@ export async function deleteTemporaryImage(reference: string, metro: string): Pr
   if (!IMAGE_METROS.includes(metro as (typeof IMAGE_METROS)[number])) return { error: 'Invalid metro.' };
   try {
     await execFileAsync(
-      'kraft',
+      UNIKRAFT_CLI,
       ['cloud', 'image', 'delete', '--metro', metro, reference],
       { env: env(token), maxBuffer: 5 * 1024 * 1024, timeout: 120000 },
     );

@@ -9,14 +9,15 @@ import fs from 'fs/promises';
 import path from 'path';
 
 const execAsync = promisify(exec);
+const UNIKRAFT_CLI = process.env.UNIKRAFT_CLI || 'unikraft';
 
 async function convertDockerToUnikraft(image: string, token: string, metro: string, memory_mb: number, vcpu: number, name: string, envRaw: string, portsRaw: string, disk_mb: number, volume_at: string): Promise<void> {
   let isWsl = false;
   try {
-    await execAsync('kraft version');
+    await execAsync(`${UNIKRAFT_CLI} version`);
   } catch (e) {
     try {
-      await execAsync('wsl kraft version');
+      await execAsync(`wsl ${UNIKRAFT_CLI} version`);
       isWsl = true;
     } catch (e2) {
       throw new Error('服务器环境缺失 kraft 工具，无法完成自动转码。');
@@ -45,7 +46,7 @@ async function convertDockerToUnikraft(image: string, token: string, metro: stri
     // 我们设置不警告 deprecated 否则会污染输出
     env.KRAFTKIT_NO_WARN_CLOUD_DEPRECATION = '1';
 
-    let deployCmd = `kraft cloud deploy --timeout 30m --metro ${metro} -M ${memory_mb} -V ${vcpu}`;
+    let deployCmd = `${UNIKRAFT_CLI} cloud deploy --timeout 30m --metro ${metro} -M ${memory_mb} -V ${vcpu}`;
     if (name) deployCmd += ` --name ${name}`;
     
     if (portsRaw) {
