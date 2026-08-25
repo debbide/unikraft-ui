@@ -34,10 +34,11 @@ function normalize(row: Record<string, unknown>): TemporaryImage | null {
 }
 
 function parseTable(output: string): TemporaryImage[] {
-  return output.split(/\r?\n/).flatMap((line) => {
-    const match = line.trim().match(/^(dghdnk\/\d{10,})\s+(\S+)\s+(\S+)$/);
+  const plainOutput = output.replace(/\u001b\[[0-9;]*m/g, '');
+  return plainOutput.split(/\r?\n/).flatMap((line) => {
+    const match = line.trim().match(/^([^\s]+\/\d{10,})\s+(\S+)\s+(.+)$/);
     if (!match) return [];
-    return [{ reference: `${match[1]}:${match[2]}`, size: match[3], createdAt: '-' }];
+    return [{ reference: `${match[1]}:${match[2]}`, size: match[3].trim(), createdAt: '-' }];
   });
 }
 
