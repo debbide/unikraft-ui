@@ -63,7 +63,7 @@ export async function deleteTemporaryImage(reference: string): Promise<{ success
   if (!token) return { error: 'Unauthorized' };
   if (!TEMP_IMAGE_PATTERN.test(reference)) return { error: 'Only temporary images can be deleted.' };
   try {
-    await execFileAsync('kraft', ['cloud', 'image', 'delete', reference], { env: env(token), maxBuffer: 5 * 1024 * 1024 });
+    await execFileAsync('kraft', ['cloud', 'image', 'delete', '--force', reference], { env: env(token), maxBuffer: 5 * 1024 * 1024, timeout: 120000 });
     revalidatePath('/dashboard/images');
     return { success: true };
   } catch (error) {
