@@ -112,7 +112,7 @@ export function DeployModal({
 
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="ports" className="text-right">开放端口 (Ports)</Label>
-            <Input id="ports" name="ports" placeholder="例如: 8080 或 443:8443 (公网:内部)" className="col-span-3" />
+            <Input id="ports" name="ports" placeholder="例如: 443:3000/http+tls 或 8080" className="col-span-3" />
           </div>
 
           <div className="grid grid-cols-4 items-center gap-4">

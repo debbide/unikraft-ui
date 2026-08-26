@@ -12,6 +12,13 @@ import { getToken } from './auth';
 const execFileAsync = promisify(execFile);
 const CONVERTED_IMAGE_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:@/-]*converted-[a-zA-Z0-9._-]+(?::[a-zA-Z0-9._-]+)?$/;
 
+function normalizePublishedPort(value: string) {
+  if (value.includes('/')) return value;
+  const match = value.match(/^(\d+):(\d+)$/);
+  if (!match) return value;
+  return match[1] === '443' ? `${value}/http+tls` : match[1] === '80' ? `${value}/http` : value;
+}
+
 function commandDetails(error: unknown) {
   return [
     error instanceof Error ? error.message : '',
@@ -30,7 +37,7 @@ async function runConvertedImage(
   if (!CONVERTED_IMAGE_PATTERN.test(image)) {
     throw new Error('请选择临时镜像列表中的已转换镜像。');
   }
-  const ports = portsRaw.split('\n').map((value) => value.trim()).filter(Boolean);
+  const ports = portsRaw.split('\n').map((value) => normalizePublishedPort(value.trim())).filter(Boolean);
   if (ports.length === 0) throw new Error('至少需要填写一个开放端口。');
 
   const memory = Number(formData.get('memory_mb') || 512);
