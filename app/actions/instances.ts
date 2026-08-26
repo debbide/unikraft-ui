@@ -98,9 +98,10 @@ export async function deployInstance(prevState: any, formData: FormData) {
 
   if (!image.startsWith('unikraft.io') && !image.startsWith('index.unikraft.io')) {
     try {
-      await runUnikraft(image, token, metro, portsRaw, formData);
-      revalidatePath('/dashboard/instances');
-      return { success: true };
+      void runUnikraft(image, token, metro, portsRaw, formData)
+        .then(() => revalidatePath('/dashboard/instances'))
+        .catch((error) => console.error('[Unikraft] background deployment failed:', error));
+      return { success: true, message: '部署任务已在后台开始，完成后请刷新实例列表。' };
     } catch (error) {
       const details = [
         error instanceof Error ? error.message : '',
