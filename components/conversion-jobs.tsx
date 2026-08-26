@@ -13,7 +13,7 @@ const labels: Record<ConversionJob['status'], string> = {
 };
 
 export function ConversionJobs({ initialJobs }: { initialJobs: ConversionJob[] }) {
-  const [jobs, setJobs] = useState(initialJobs);
+  const [jobs, setJobs] = useState(initialJobs.filter((job) => job.status !== 'failed'));
   const [error, setError] = useState('');
   const [pending, startTransition] = useTransition();
   const router = useRouter();
@@ -26,7 +26,7 @@ export function ConversionJobs({ initialJobs }: { initialJobs: ConversionJob[] }
       if (disposed) return;
       const newlyCompleted = result.jobs.some((job) => job.status === 'completed' && !knownCompleted.current.has(job.id));
       result.jobs.filter((job) => job.status === 'completed').forEach((job) => knownCompleted.current.add(job.id));
-      setJobs(result.jobs);
+      setJobs(result.jobs.filter((job) => job.status !== 'failed'));
       setError(result.error || '');
       if (newlyCompleted) router.refresh();
     }
@@ -39,7 +39,7 @@ export function ConversionJobs({ initialJobs }: { initialJobs: ConversionJob[] }
       const result = await retryConversionJob(id);
       if (result.error) setError(result.error);
       const refreshed = await listConversionJobs();
-      setJobs(refreshed.jobs);
+       setJobs(refreshed.jobs.filter((job) => job.status !== 'failed'));
     });
   }
 

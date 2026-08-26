@@ -102,7 +102,7 @@ export async function convertDockerImage(_previousState: { success?: true; error
 
 export async function listConversionJobs(): Promise<{ jobs: ConversionJob[]; error?: string }> {
   if (!(await getToken())) return { jobs: [], error: 'Unauthorized' };
-  try { return { jobs: await listJobs() }; } catch (error) { return { jobs: [], error: commandDetails(error, '无法读取转换任务。') }; }
+  try { return { jobs: (await listJobs()).filter((job) => job.status !== 'failed') }; } catch (error) { return { jobs: [], error: commandDetails(error, '无法读取转换任务。') }; }
 }
 
 export async function retryConversionJob(id: string): Promise<{ success?: true; error?: string }> {
