@@ -18,7 +18,7 @@ export function ExampleBuildForm() {
     {selected && <div className="rounded border bg-muted/30 p-4 text-sm">
       <div className="flex flex-wrap items-baseline justify-between gap-2"><h3 className="font-semibold">{selected.name}</h3><span className="text-muted-foreground">{selected.category}</span></div>
       <p className="mt-2 text-muted-foreground">{selected.description}</p>
-      <dl className="mt-3 grid gap-2 text-muted-foreground sm:grid-cols-3"><div><dt className="font-medium text-foreground">官方目录</dt><dd className="break-all">{selected.directory}</dd></div><div><dt className="font-medium text-foreground">默认端口</dt><dd>{selected.port}</dd></div><div><dt className="font-medium text-foreground">内存</dt><dd>{selected.memoryMb} MB</dd></div></dl>
+      <dl className="mt-3 grid gap-2 text-muted-foreground sm:grid-cols-3"><div><dt className="font-medium text-foreground">官方目录</dt><dd className="break-all">{selected.directory}</dd></div><div><dt className="font-medium text-foreground">官方部署端口</dt><dd>{selected.port ?? '未声明'}</dd></div><div><dt className="font-medium text-foreground">官方内存建议</dt><dd>{selected.memoryMb ? `${selected.memoryMb} MB` : '未声明'}</dd></div></dl>
       <a className="mt-3 inline-block text-primary underline underline-offset-4" href={selected.sourceUrl} target="_blank" rel="noreferrer">查看官方源码</a>
     </div>}
     {state?.error && <p className="basis-full text-sm text-red-600">{state.error}</p>}

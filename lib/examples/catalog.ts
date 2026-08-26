@@ -4,8 +4,8 @@ export type ExampleTemplate = {
   description: string;
   category: string;
   directory: string;
-  port: string;
-  memoryMb: number;
+  port?: string;
+  memoryMb?: number;
   sourceUrl: string;
 };
 
@@ -24,14 +24,24 @@ function category(directory: string) {
   return '平台与工具';
 }
 
+// Values are extracted from each directory's deployment command in the official
+// README at EXAMPLES_COMMIT. Missing fields are intentionally left undefined.
+const EXAMPLE_DEPLOYMENT: Record<string, { port?: string; memoryMb?: number }> = {
+  'basic-ops': { port: '443:8080/tls+http', memoryMb: 256 }, 'build-environments': { port: '443:8080/tls+http', memoryMb: 512 }, 'caddy2.7-go1.21': { port: '443:2015/http+tls', memoryMb: 256 }, 'chromium-cdp': { port: '443:8080/tls+http', memoryMb: 4096 }, 'chromium-cdp-auth': { port: '443:8080/tls+http', memoryMb: 4096 }, 'debian-ssh': { memoryMb: 1024 }, 'dragonflydb': { port: '443:6379/http+tls', memoryMb: 512 }, 'duckdb-go1.21': { port: '443:8080/tls+http', memoryMb: 256 }, 'feature-change-instance-cmd': { port: '443:8080/tls+http', memoryMb: 256 }, 'github-webhook-node': { port: '443:3000/tls+http', memoryMb: 1024 }, 'grafana': { port: '443:3000/tls+http', memoryMb: 2048 }, 'haproxy': { port: '443:8404/tls+http', memoryMb: 256 },
+  'httpserver-boost1.74-gpp13.2': { port: '443:8080/tls+http', memoryMb: 256 }, 'httpserver-bun': { port: '443:3000/tls+http', memoryMb: 512 }, 'httpserver-c-debug': { port: '443:8080/tls+http', memoryMb: 256 }, 'httpserver-dotnet10.0': { port: '443:8080/tls+http', memoryMb: 512 }, 'httpserver-elixir1.16': { port: '443:3000/tls+http', memoryMb: 1024 }, 'httpserver-erlang26.2': { port: '443:8080/tls+http', memoryMb: 512 }, 'httpserver-expressjs4.18-node21': { port: '443:3000/tls+http', memoryMb: 512 }, 'httpserver-gcc13.2': { port: '443:8080/tls+http', memoryMb: 256 }, 'httpserver-go1.21': { port: '443:8080/tls+http', memoryMb: 256 }, 'httpserver-gpp13.2': { port: '443:8080/tls+http', memoryMb: 256 },
+  'httpserver-java17-springboot': { port: '443:8080/tls+http', memoryMb: 1024 }, 'httpserver-java17-spring-petclinic': { port: '443:8080/tls+http', memoryMb: 1024 }, 'httpserver-java21': { port: '443:8080/tls+http', memoryMb: 1024 }, 'httpserver-lua5.1': { port: '443:8080/tls+http', memoryMb: 256 }, 'httpserver-nginx-vite-vanilla': { port: '443:8080/tls+http', memoryMb: 256 }, 'httpserver-node21-nextjs': { port: '443:3000/tls+http', memoryMb: 768 }, 'httpserver-node21-solid-start': { port: '443:3000/tls+http', memoryMb: 512 }, 'httpserver-node22-react-router': { port: '443:3000/tls+http', memoryMb: 768 }, 'httpserver-node22-sveltekit': { port: '443:3000/tls+http', memoryMb: 512 }, 'httpserver-node26': { port: '443:8080/tls+http', memoryMb: 512 }, 'httpserver-node-express-puppeteer': { port: '443:3000/tls+http', memoryMb: 4096 }, 'httpserver-node-vite-ssr-vanilla': { port: '443:8080/tls+http', memoryMb: 1024 }, 'httpserver-node-vite-vanilla': { port: '443:8080/tls+http', memoryMb: 4096 }, 'httpserver-perl5.42': { port: '443:8080/tls+http', memoryMb: 512 }, 'httpserver-php8.2': { port: '443:8080/tls+http', memoryMb: 512 }, 'httpserver-prisma-expressjs4.19-node18': { port: '443:3000/tls+http', memoryMb: 512 },
+  'httpserver-python3.12': { port: '443:8080/tls+http', memoryMb: 512 }, 'httpserver-python3.12-django5.0': { port: '443:80/tls+http', memoryMb: 1024 }, 'httpserver-python3.12-fastapi-0.121.3': { port: '443:8080/tls+http', memoryMb: 512 }, 'httpserver-python3.12-flask3.0': { port: '443:8080/tls+http', memoryMb: 512 }, 'httpserver-python3.12-flask3.0-sqlite': { port: '443:8080/tls+http', memoryMb: 768 }, 'httpserver-ruby3.2': { port: '443:8080/tls+http', memoryMb: 256 }, 'httpserver-rust1.75-tokio': { port: '443:8080/tls+http', memoryMb: 256 }, 'httpserver-rust1.88-actix-web4': { port: '443:8080/tls+http', memoryMb: 256 }, 'httpserver-rust1.88-rocket0.5': { port: '443:8080/tls+http', memoryMb: 256 }, 'httpserver-rust1.91': { port: '443:8080/tls+http', memoryMb: 384 }, 'httpserver-rust-trunkrs-leptos': { port: '443:8080/tls+http', memoryMb: 256 }, 'hugo0.122': { port: '443:1313/tls+http', memoryMb: 512 }, 'imaginary': { port: '443:8080/tls+http', memoryMb: 512 },
+  'mariadb': { memoryMb: 1024 }, 'mcp-server-arxiv': { port: '443:8080/tls+http', memoryMb: 2048 }, 'mcp-server-simple': { port: '443:8080/tls+http', memoryMb: 512 }, 'memcached1.6': { memoryMb: 256 }, 'minecraft': { memoryMb: 4096 }, 'minio': { port: '443:9001/tls+http', memoryMb: 512 }, 'mongodb': { memoryMb: 1024 }, 'mysql': { memoryMb: 1024 }, 'neo4j': { port: '443:7474/tls+http', memoryMb: 2048 }, 'nginx': { port: '443:8080/tls+http', memoryMb: 256 }, 'node18-agario': { port: '443:3000/tls+http', memoryMb: 1024 }, 'node18-wingsio': { port: '443:3000/tls+http', memoryMb: 1024 }, 'node21-websocket': { port: '443:8080/tls+http', memoryMb: 1024 }, 'node24-karaoke': { port: '443:8080/tls+http', memoryMb: 2048 }, 'node-code-execution': { port: '443:8080/tls+http', memoryMb: 512 },
+  'node-playwright-chromium': { port: '443:8080/tls+http', memoryMb: 4096 }, 'node-playwright-firefox': { port: '443:8080/tls+http', memoryMb: 4096 }, 'node-playwright-webkit': { port: '443:8080/tls+http', memoryMb: 4096 }, 'novnc-browser': { port: '443:6080/tls+http', memoryMb: 4096 }, 'openclaw': { memoryMb: 4096 }, 'opentelemetry-collector': { memoryMb: 1536 }, 'postgres': { memoryMb: 1024 }, 'python-playwright-chromium': { port: '443:8080/tls+http', memoryMb: 4096 }, 'redis7.2': { memoryMb: 512 }, 'ruby3.2-rails': { port: '443:3000/tls+http', memoryMb: 1024 }, 'skipper0.18': { port: '443:9090/tls+http', memoryMb: 256 }, 'spin-wagi-http': { port: '443:3000/tls+http', memoryMb: 4096 }, 'traefik': { port: '443:80/tls+http', memoryMb: 1024 }, 'visual-studio-code-server': { port: '443:8443/tls+http', memoryMb: 2048 }, 'vsftpd': { memoryMb: 1024 }, 'wazero-import-go': { port: '443:8080/tls+http', memoryMb: 512 }, 'wordpress-all-in-one': { port: '443:3000/tls+http', memoryMb: 4096 },
+};
+
 export const EXAMPLE_TEMPLATES: ExampleTemplate[] = EXAMPLE_DIRECTORIES.map((directory) => ({
   id: directory.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase(),
   name: directory.split('/').pop() || directory,
   description: `官方 examples：${directory}`,
   directory,
   category: category(directory),
-  port: '443:8080/http+tls',
-  memoryMb: 512,
+  ...EXAMPLE_DEPLOYMENT[directory],
   sourceUrl: `${EXAMPLES_REPOSITORY.replace(/\.git$/, '')}/tree/${EXAMPLES_COMMIT}/${directory}`,
 }));
 
