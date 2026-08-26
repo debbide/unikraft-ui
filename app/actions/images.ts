@@ -51,7 +51,7 @@ function normalize(row: Record<string, unknown>, metro: string): TemporaryImage 
   const tag = text(row.tag);
   const reference = tag && !repository.endsWith(`:${tag}`) ? `${repository}:${tag}` : repository;
   if (!reference || !TEMP_IMAGE_PATTERN.test(reference)) return null;
-  return { reference, metro, size: text(row.size || row.size_bytes || row.bytes) || '-', createdAt: text(row.created_at || row.createdAt || row.created) || '-' };
+  return { reference, metro, size: text(row.size_in_bytes || row.size_bytes || row.size || row.bytes) || '-', createdAt: text(row.created_at || row.createdAt || row.created) || '-' };
 }
 function parseTable(output: string, metro: string): TemporaryImage[] {
   return output.replace(/\u001b\[[0-9;]*m/g, '').split(/\r?\n/).flatMap((line) => {
@@ -59,8 +59,30 @@ function parseTable(output: string, metro: string): TemporaryImage[] {
     if (!match) return [];
     const reference = match[1].replace(/^oci:\/\//, '');
     const taggedReference = reference.includes(':') || reference.includes('@') ? reference : `${reference}:latest`;
-    return !isMetroIndexReference(reference) && TEMP_IMAGE_PATTERN.test(taggedReference) ? [{ reference: taggedReference, metro, size: match[2].trim(), createdAt: '-' }] : [];
+    return !isMetroIndexReference(reference) && TEMP_IMAGE_PATTERN.test(taggedReference) ? [{ reference: taggedReference, metro, size: '-', createdAt: '-' }] : [];
   });
+}
+
+async function enrichImageSizes(
+  images: TemporaryImage[],
+  configPath: string,
+  env: NodeJS.ProcessEnv,
+): Promise<TemporaryImage[]> {
+  return Promise.all(images.map(async (image) => {
+    try {
+      const { stdout } = await execFileAsync(
+        UNIKRAFT_CLI,
+        ['--config', configPath, 'image', 'get', image.reference, '--output', 'json'],
+        { env, maxBuffer: 1024 * 1024, timeout: 120000 },
+      );
+      const rows = normalizeRows(JSON.parse(stdout));
+      const details = rows[0];
+      const size = details ? text(details.size_in_bytes || details.size_bytes || details.size || details.bytes) : '';
+      return size ? { ...image, size } : image;
+    } catch {
+      return image;
+    }
+  }));
 }
 
 export async function listTemporaryImages(): Promise<{ images: TemporaryImage[]; error?: string }> {
@@ -70,8 +92,12 @@ export async function listTemporaryImages(): Promise<{ images: TemporaryImage[];
     const { stdout } = await execFileAsync(UNIKRAFT_CLI, ['--config', configPath, 'image', 'list', '--output', 'json'], { env, maxBuffer: 5 * 1024 * 1024 });
     try {
       const images = normalizeRows(JSON.parse(stdout)).map((row) => normalize(row, '-')).filter((image): image is TemporaryImage => image !== null);
-      return { images: dedupeImages(images.length ? images : parseTable(stdout, '-')) };
-    } catch { return { images: dedupeImages(parseTable(stdout, '-')) }; }
+      const listed = dedupeImages(images.length ? images : parseTable(stdout, '-'));
+      return { images: await enrichImageSizes(listed, configPath, env) };
+    } catch {
+      const listed = dedupeImages(parseTable(stdout, '-'));
+      return { images: await enrichImageSizes(listed, configPath, env) };
+    }
   }); } catch (error) { return { images: [], error: commandDetails(error, 'Unable to list images.') }; }
 }
 
