@@ -7,9 +7,6 @@ services:
     environment:
       NODE_ENV: production
       KRAFTKIT_NO_WARN_CLOUD_DEPRECATION: "1"
-      # Keep this value stable when building/running multiple replicas. The
-      # production image embeds the same key during `next build`.
-      NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: ${NEXT_SERVER_ACTIONS_ENCRYPTION_KEY:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - unikraft-ui-data:/app/data

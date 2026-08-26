@@ -26,7 +26,7 @@ openssl rand -base64 32
 ```
 
 Keep this secret stable across builds and replicas. The Docker workflow injects it
-only during `next build`, while `compose.yml` supplies the same value at runtime.
+only during `next build`, and the resulting image embeds the matching references.
 After replacing an image, recreate the container and refresh any browser tabs that
 were opened against the previous deployment; old tabs can contain obsolete Action
 IDs and report `Failed to find Server Action` once.
