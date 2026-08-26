@@ -10,6 +10,7 @@ import { getToken } from './auth';
 import { createJob, findActiveJob, listJobs } from '@/lib/image-conversion/jobs';
 import { enqueueConversion, enqueueJob, recoverJobs } from '@/lib/image-conversion/worker';
 import type { ConversionJob } from '@/lib/image-conversion/types';
+import { fetchUnikraft, METROS } from '@/lib/unikraft/client';
 
 const execFileAsync = promisify(execFile);
 const UNIKRAFT_CLI = process.env.UNIKRAFT_CLI || 'unikraft';
@@ -87,6 +88,36 @@ async function enrichImageSizes(
   }));
 }
 
+async function listImageDetailsFromApi(token: string): Promise<TemporaryImage[]> {
+  const results = await Promise.allSettled(
+    METROS.map(async (metro) => {
+      const response = await fetchUnikraft<unknown>('/v1/images', token, {}, metro);
+      return normalizeRows(response)
+        .map((row) => normalize(row, metro))
+        .filter((image): image is TemporaryImage => image !== null);
+    }),
+  );
+
+  return dedupeImages(
+    results.flatMap((result) => (result.status === 'fulfilled' ? result.value : [])),
+  );
+}
+
+async function mergeImageDetails(
+  listed: TemporaryImage[],
+  token: string,
+  configPath: string,
+  env: NodeJS.ProcessEnv,
+) {
+  const apiImages = await listImageDetailsFromApi(token);
+  const merged = new Map(listed.map((image) => [image.reference, image]));
+  for (const image of apiImages) {
+    const current = merged.get(image.reference);
+    merged.set(image.reference, current && current.size !== '-' ? current : image);
+  }
+  return enrichImageSizes([...merged.values()], configPath, env);
+}
+
 export async function listTemporaryImages(options?: { includeSizes?: boolean }): Promise<{ images: TemporaryImage[]; error?: string }> {
   const token = await getToken();
   if (!token) return { images: [], error: 'Unauthorized' };
@@ -95,10 +126,12 @@ export async function listTemporaryImages(options?: { includeSizes?: boolean }):
     try {
       const images = normalizeRows(JSON.parse(stdout)).map((row) => normalize(row, '-')).filter((image): image is TemporaryImage => image !== null);
       const listed = dedupeImages(images.length ? images : parseTable(stdout, '-'));
-      return { images: options?.includeSizes === false ? listed : await enrichImageSizes(listed, configPath, env) };
+      if (options?.includeSizes === false) return { images: listed };
+      return { images: await mergeImageDetails(listed, token, configPath, env) };
     } catch {
       const listed = dedupeImages(parseTable(stdout, '-'));
-      return { images: options?.includeSizes === false ? listed : await enrichImageSizes(listed, configPath, env) };
+      if (options?.includeSizes === false) return { images: listed };
+      return { images: await mergeImageDetails(listed, token, configPath, env) };
     }
   }); } catch (error) { return { images: [], error: commandDetails(error, 'Unable to list images.') }; }
 }
