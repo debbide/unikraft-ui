@@ -18,6 +18,26 @@ function imageReferences(value: unknown): string[] {
   return (typeof record.ref === 'string' ? [record.ref] : []).concat(Object.values(record).flatMap(imageReferences));
 }
 
+function generatedVolumeName(value: unknown, metro: string): string | undefined {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const name = generatedVolumeName(item, metro);
+      if (name) return name;
+    }
+    return undefined;
+  }
+  if (!value || typeof value !== 'object') return undefined;
+  const record = value as Record<string, unknown>;
+  const name = typeof record.name === 'string' ? record.name : '';
+  const itemMetro = typeof record.metro === 'string' ? record.metro : metro;
+  if (itemMetro === metro && /^data-(?:minebot|\d{10,})$/.test(name)) return name;
+  for (const child of Object.values(record)) {
+    const found = generatedVolumeName(child, metro);
+    if (found) return found;
+  }
+  return undefined;
+}
+
 async function cleanupGeneratedImages(configPath: string, env: NodeJS.ProcessEnv, namespace: string): Promise<void> {
   const { stdout } = await execFileAsync('unikraft', ['--config', configPath, 'image', 'list', '--output', 'json'], { env, timeout: 120000, maxBuffer: 5 * 1024 * 1024 });
   const references = imageReferences(JSON.parse(stdout)).filter((reference) => {
@@ -68,11 +88,14 @@ async function runUnikraft(image: string, token: string, metro: string, portsRaw
     if (disk > 0) {
       const volumeAt = String(formData.get('volume_at') || '/data').trim();
       if (!volumeAt.startsWith('/') || /[\r\n]/.test(volumeAt)) throw new Error('Invalid volume mount path.');
-      const volumeName = `data-${image.split('/').pop()?.split(':')[0].replace(/[^a-zA-Z0-9-]/g, '-') || 'app'}`;
+      const preferredVolumeName = `data-${image.split('/').pop()?.split(':')[0].replace(/[^a-zA-Z0-9-]/g, '-') || 'app'}`;
       const size = `${Math.max(1, Math.ceil(disk / 1024))}G`;
-      await execFileAsync('unikraft', ['--config', configPath, 'volumes', 'get', volumeName, '--metro', metro], { env, timeout: 120000 }).catch(async () => {
+      const { stdout: volumesJson } = await execFileAsync('unikraft', ['--config', configPath, 'volumes', 'list', '--output', 'json'], { env, timeout: 120000, maxBuffer: 5 * 1024 * 1024 });
+      const existingVolumeName = generatedVolumeName(JSON.parse(volumesJson), metro);
+      const volumeName = existingVolumeName || preferredVolumeName;
+      if (!existingVolumeName) {
         await execFileAsync('unikraft', ['--config', configPath, 'volumes', 'create', '--metro', metro, '--name', volumeName, '--size', size], { env, timeout: 120000 });
-      });
+      }
       args.push('--volume', `${volumeName}:${volumeAt}`);
     }
     const { stdout, stderr } = await execFileAsync(
