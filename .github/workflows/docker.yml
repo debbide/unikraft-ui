@@ -48,5 +48,9 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            DEPLOYMENT_VERSION=${{ github.sha }}
+          secrets: |
+            next_server_actions_key=${{ secrets.NEXT_SERVER_ACTIONS_ENCRYPTION_KEY }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

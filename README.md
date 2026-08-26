@@ -16,6 +16,21 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Production deployment
+
+The application uses Next.js Server Actions. Before publishing production images,
+create a repository Actions secret named `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`:
+
+```bash
+openssl rand -base64 32
+```
+
+Keep this secret stable across builds and replicas. The Docker workflow injects it
+only during `next build`, while `compose.yml` supplies the same value at runtime.
+After replacing an image, recreate the container and refresh any browser tabs that
+were opened against the previous deployment; old tabs can contain obsolete Action
+IDs and report `Failed to find Server Action` once.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
