@@ -8,7 +8,7 @@ import { listTemporaryImages } from '@/app/actions/images';
 
 export default async function InstancesPage() {
   const token = await getToken();
-  
+
   if (!token) {
     return <div>Unauthorized</div>;
   }
@@ -16,12 +16,13 @@ export default async function InstancesPage() {
   // 获取所有区的实例列表
   let instances: any[] = [];
   const volumesByMetro: Record<string, { name: string; state?: string }[]> = {};
-  const { images } = await listTemporaryImages();
+  // 实例页只需要镜像引用；避免为每个镜像额外执行 image get，缩短菜单切换等待时间。
+  const { images } = await listTemporaryImages({ includeSizes: false });
   try {
     const results = await Promise.allSettled(
       METROS.map(metro => fetchUnikraft<any>('/v1/instances', token, {}, metro).then(res => ({ metro, instances: res?.data?.instances || [] })))
     );
-    
+
     results.forEach(result => {
       if (result.status === 'fulfilled') {
         const mapped = result.value.instances.map((inst: any) => ({ ...inst, metro: result.value.metro }));

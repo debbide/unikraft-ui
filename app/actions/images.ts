@@ -38,7 +38,8 @@ function normalizeRows(value: unknown): Record<string, unknown>[] {
   if (Array.isArray(value)) return value.flatMap(normalizeRows);
   if (value && typeof value === 'object') {
     const record = value as Record<string, unknown>;
-    return (typeof record.ref === 'string' ? [record] : []).concat(Object.values(record).flatMap(normalizeRows));
+    const isImage = ['ref', 'url', 'repository', 'name', 'image', 'reference'].some((key) => typeof record[key] === 'string');
+    return (isImage ? [record] : []).concat(Object.values(record).flatMap(normalizeRows));
   }
   return [];
 }
@@ -46,7 +47,7 @@ function text(value: unknown): string { return typeof value === 'string' || type
 function isMetroIndexReference(reference: string) { return /^index\.[a-z0-9-]+\.unikraft\.cloud\//i.test(reference.replace(/^oci:\/\//, '').trim()); }
 function dedupeImages(images: TemporaryImage[]) { return Array.from(new Map(images.map((image) => [image.reference, image])).values()); }
 function normalize(row: Record<string, unknown>, metro: string): TemporaryImage | null {
-  const repository = text(row.ref || row.repository || row.name || row.image || row.reference).replace(/^oci:\/\//, '').trim();
+  const repository = text(row.ref || row.url || row.repository || row.name || row.image || row.reference).replace(/^oci:\/\//, '').trim();
   if (isMetroIndexReference(repository)) return null;
   const tag = text(row.tag);
   const reference = tag && !repository.endsWith(`:${tag}`) ? `${repository}:${tag}` : repository;
@@ -69,6 +70,7 @@ async function enrichImageSizes(
   env: NodeJS.ProcessEnv,
 ): Promise<TemporaryImage[]> {
   return Promise.all(images.map(async (image) => {
+    if (image.size !== '-') return image;
     try {
       const { stdout } = await execFileAsync(
         UNIKRAFT_CLI,
@@ -85,7 +87,7 @@ async function enrichImageSizes(
   }));
 }
 
-export async function listTemporaryImages(): Promise<{ images: TemporaryImage[]; error?: string }> {
+export async function listTemporaryImages(options?: { includeSizes?: boolean }): Promise<{ images: TemporaryImage[]; error?: string }> {
   const token = await getToken();
   if (!token) return { images: [], error: 'Unauthorized' };
   try { return await withLogin(token, async (configPath, env) => {
@@ -93,10 +95,10 @@ export async function listTemporaryImages(): Promise<{ images: TemporaryImage[];
     try {
       const images = normalizeRows(JSON.parse(stdout)).map((row) => normalize(row, '-')).filter((image): image is TemporaryImage => image !== null);
       const listed = dedupeImages(images.length ? images : parseTable(stdout, '-'));
-      return { images: await enrichImageSizes(listed, configPath, env) };
+      return { images: options?.includeSizes === false ? listed : await enrichImageSizes(listed, configPath, env) };
     } catch {
       const listed = dedupeImages(parseTable(stdout, '-'));
-      return { images: await enrichImageSizes(listed, configPath, env) };
+      return { images: options?.includeSizes === false ? listed : await enrichImageSizes(listed, configPath, env) };
     }
   }); } catch (error) { return { images: [], error: commandDetails(error, 'Unable to list images.') }; }
 }
