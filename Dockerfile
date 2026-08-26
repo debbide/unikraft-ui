@@ -7,6 +7,7 @@ RUN curl --proto '=https' --tlsv1.2 -fsSL https://unikraft.com/cli/install.sh | 
 
 ENV PATH="/root/.local/bin:${PATH}"
 ENV UNIKRAFT_CLI=unikraft
+ENV UNIKRAFT_DATA_DIR=/app/data
 WORKDIR /app
 
 COPY package.json package-lock.json ./

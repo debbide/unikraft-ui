@@ -9,3 +9,7 @@ services:
       KRAFTKIT_NO_WARN_CLOUD_DEPRECATION: "1"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - unikraft-ui-data:/app/data
+
+volumes:
+  unikraft-ui-data:

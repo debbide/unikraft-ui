@@ -3,10 +3,13 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { revalidatePath } from 'next/cache';
-import { getToken } from './auth';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
+import { getToken } from './auth';
+import { createJob, findActiveJob, listJobs } from '@/lib/image-conversion/jobs';
+import { enqueueConversion, recoverJobs } from '@/lib/image-conversion/worker';
+import type { ConversionJob } from '@/lib/image-conversion/types';
 
 const execFileAsync = promisify(execFile);
 const UNIKRAFT_CLI = process.env.UNIKRAFT_CLI || 'unikraft';
@@ -15,13 +18,8 @@ const TEMP_IMAGE_PATTERN = /(?:^|\/)(?:\d{10,}|docker-\d{10,}|converted-[^/:]+)(
 export interface TemporaryImage { reference: string; metro: string; size: string; createdAt: string }
 
 function commandDetails(error: unknown, fallback: string) {
-  const message = error instanceof Error ? error.message : '';
-  const stderr = typeof error === 'object' && error !== null && 'stderr' in error ? String(error.stderr || '') : '';
-  return [message, stderr].filter(Boolean).join('\n').trim() || fallback;
-}
-
-function shellQuote(value: string) {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
+  const item = error as { message?: string; stderr?: string };
+  return [item.message, item.stderr].filter(Boolean).join('\n').trim() || fallback;
 }
 
 async function withLogin<T>(token: string, action: (configPath: string, env: NodeJS.ProcessEnv) => Promise<T>): Promise<T> {
@@ -33,31 +31,20 @@ async function withLogin<T>(token: string, action: (configPath: string, env: Nod
   try {
     await execFileAsync(UNIKRAFT_CLI, ['--config', configPath, 'login', '--no-browser', '--token', tokenPath], { env, timeout: 120000 });
     return await action(configPath, env);
-  } finally {
-    await fs.rm(dir, { recursive: true, force: true });
-  }
+  } finally { await fs.rm(dir, { recursive: true, force: true }); }
 }
 
 function normalizeRows(value: unknown): Record<string, unknown>[] {
   if (Array.isArray(value)) return value.flatMap(normalizeRows);
   if (value && typeof value === 'object') {
     const record = value as Record<string, unknown>;
-    const rows = typeof record.ref === 'string' ? [record] : [];
-    return rows.concat(Object.values(record).flatMap(normalizeRows));
+    return (typeof record.ref === 'string' ? [record] : []).concat(Object.values(record).flatMap(normalizeRows));
   }
   return [];
 }
-
 function text(value: unknown): string { return typeof value === 'string' || typeof value === 'number' ? String(value) : ''; }
-
-function isMetroIndexReference(reference: string) {
-  return /^index\.[a-z0-9-]+\.unikraft\.cloud\//i.test(reference.replace(/^oci:\/\//, '').trim());
-}
-
-function dedupeImages(images: TemporaryImage[]) {
-  return Array.from(new Map(images.map((image) => [image.reference, image])).values());
-}
-
+function isMetroIndexReference(reference: string) { return /^index\.[a-z0-9-]+\.unikraft\.cloud\//i.test(reference.replace(/^oci:\/\//, '').trim()); }
+function dedupeImages(images: TemporaryImage[]) { return Array.from(new Map(images.map((image) => [image.reference, image])).values()); }
 function normalize(row: Record<string, unknown>, metro: string): TemporaryImage | null {
   const repository = text(row.ref || row.repository || row.name || row.image || row.reference).replace(/^oci:\/\//, '').trim();
   if (isMetroIndexReference(repository)) return null;
@@ -66,98 +53,65 @@ function normalize(row: Record<string, unknown>, metro: string): TemporaryImage 
   if (!reference || !TEMP_IMAGE_PATTERN.test(reference)) return null;
   return { reference, metro, size: text(row.size || row.size_bytes || row.bytes) || '-', createdAt: text(row.created_at || row.createdAt || row.created) || '-' };
 }
-
 function parseTable(output: string, metro: string): TemporaryImage[] {
-  const plainOutput = output.replace(/\u001b\[[0-9;]*m/g, '');
-  return plainOutput.split(/\r?\n/).flatMap((line) => {
+  return output.replace(/\u001b\[[0-9;]*m/g, '').split(/\r?\n/).flatMap((line) => {
     const match = line.trim().match(/^([^\s]+)\s+(.+)$/);
     if (!match) return [];
     const reference = match[1].replace(/^oci:\/\//, '');
-    if (isMetroIndexReference(reference)) return [];
     const taggedReference = reference.includes(':') || reference.includes('@') ? reference : `${reference}:latest`;
-    if (!TEMP_IMAGE_PATTERN.test(taggedReference)) return [];
-    return [{ reference: taggedReference, metro, size: match[2].trim(), createdAt: '-' }];
+    return !isMetroIndexReference(reference) && TEMP_IMAGE_PATTERN.test(taggedReference) ? [{ reference: taggedReference, metro, size: match[2].trim(), createdAt: '-' }] : [];
   });
 }
 
 export async function listTemporaryImages(): Promise<{ images: TemporaryImage[]; error?: string }> {
   const token = await getToken();
   if (!token) return { images: [], error: 'Unauthorized' };
-  try {
-    return await withLogin(token, async (configPath, env) => {
-      const { stdout } = await execFileAsync(UNIKRAFT_CLI, ['--config', configPath, 'image', 'list', '--output', 'json'], { env, maxBuffer: 5 * 1024 * 1024 });
-      try {
-        const images = normalizeRows(JSON.parse(stdout)).map((row) => normalize(row, '-')).filter((image): image is TemporaryImage => image !== null);
-        return { images: dedupeImages(images.length > 0 ? images : parseTable(stdout, '-')) };
-      } catch { return { images: dedupeImages(parseTable(stdout, '-')) }; }
-    });
-  } catch (error) {
-    return { images: [], error: error instanceof Error ? error.message : 'Unable to list images.' };
-  }
+  try { return await withLogin(token, async (configPath, env) => {
+    const { stdout } = await execFileAsync(UNIKRAFT_CLI, ['--config', configPath, 'image', 'list', '--output', 'json'], { env, maxBuffer: 5 * 1024 * 1024 });
+    try {
+      const images = normalizeRows(JSON.parse(stdout)).map((row) => normalize(row, '-')).filter((image): image is TemporaryImage => image !== null);
+      return { images: dedupeImages(images.length ? images : parseTable(stdout, '-')) };
+    } catch { return { images: dedupeImages(parseTable(stdout, '-')) }; }
+  }); } catch (error) { return { images: [], error: commandDetails(error, 'Unable to list images.') }; }
 }
 
 export async function deleteTemporaryImage(reference: string, _metro: string): Promise<{ success?: true; error?: string }> {
+  void _metro;
   const token = await getToken();
   if (!token) return { error: 'Unauthorized' };
   if (!TEMP_IMAGE_PATTERN.test(reference)) return { error: 'Only temporary images can be deleted.' };
   try {
-    await withLogin(token, (configPath, env) => execFileAsync(
-      UNIKRAFT_CLI,
-      ['--config', configPath, 'image', 'delete', reference],
-      { env, maxBuffer: 5 * 1024 * 1024, timeout: 120000 },
-    ).then(() => undefined));
+    await withLogin(token, (configPath, env) => execFileAsync(UNIKRAFT_CLI, ['--config', configPath, 'image', 'delete', reference], { env, maxBuffer: 5 * 1024 * 1024, timeout: 120000 }).then(() => undefined));
     revalidatePath('/dashboard/images');
     return { success: true };
-  } catch (error) {
-    const details = [
-      error instanceof Error ? error.message : '',
-      typeof error === 'object' && error !== null && 'stdout' in error ? String(error.stdout || '') : '',
-      typeof error === 'object' && error !== null && 'stderr' in error ? String(error.stderr || '') : '',
-    ].filter(Boolean).join('\n').trim();
-    return { error: details || 'Unable to delete image.' };
-  }
+  } catch (error) { return { error: commandDetails(error, 'Unable to delete image.') }; }
 }
 
-export async function convertDockerImage(
-  _previousState: { success?: true; error?: string } | null,
-  formData: FormData,
-): Promise<{ success?: true; error?: string }> {
+export async function convertDockerImage(_previousState: { success?: true; error?: string; job?: ConversionJob } | null, formData: FormData): Promise<{ success?: true; error?: string; job?: ConversionJob }> {
   const token = await getToken();
   if (!token) return { error: 'Unauthorized' };
   const image = String(formData.get('image') || '').trim();
-  if (!image || /[\r\n]/.test(image) || !/^[a-zA-Z0-9][a-zA-Z0-9._:@/-]*$/.test(image)) {
-    return { error: '请输入有效的 Docker 镜像引用。' };
-  }
+  if (!image || /[\r\n]/.test(image) || !/^[a-zA-Z0-9][a-zA-Z0-9._:@/-]*$/.test(image)) return { error: '请输入有效的 Docker 镜像引用。' };
+  await recoverJobs();
+  if (await findActiveJob(image)) return { error: '该镜像已有转换任务在队列中，请等待任务完成。' };
+  const job = await createJob(image);
+  enqueueConversion(job.id, token, image);
+  revalidatePath('/dashboard/images');
+  return { success: true, job };
+}
 
-  try {
-    void withLogin(token, async (configPath, env) => {
-      await execFileAsync('docker', ['pull', image], { env, timeout: 30 * 60 * 1000, maxBuffer: 20 * 1024 * 1024 });
-      const inspect = await execFileAsync('docker', ['image', 'inspect', image], { env, maxBuffer: 5 * 1024 * 1024 });
-      const metadata = JSON.parse(inspect.stdout)[0]?.Config || {};
-      const command = [...(Array.isArray(metadata.Entrypoint) ? metadata.Entrypoint : []), ...(Array.isArray(metadata.Cmd) ? metadata.Cmd : [])].map(String);
-      if (command.length === 0) throw new Error('Docker 镜像没有 Entrypoint 或 Cmd。');
-      const workingDir = typeof metadata.WorkingDir === 'string' ? metadata.WorkingDir.trim() : '';
-      const runtimeCommand = workingDir
-        ? ['/bin/sh', '-c', `cd ${shellQuote(workingDir)} && exec ${command.map(shellQuote).join(' ')}`]
-        : command;
-      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'unikraft-convert-'));
-      try {
-        await fs.writeFile(path.join(dir, 'Dockerfile'), `FROM ${image}\n`);
-        await fs.writeFile(path.join(dir, 'Kraftfile'), [
-          'spec: v0.7', '', 'runtime: base-compat:latest', '', 'rootfs:',
-          '  source:', '    path: ./Dockerfile', '    type: dockerfile', '  format: erofs', '',
-          `cmd: ${JSON.stringify(runtimeCommand)}`,
-        ].join('\n'));
-        const namespace = process.env.UNIKRAFT_IMAGE_NAMESPACE || 'dghdnk';
-        const imageName = image.split('/').pop()?.replace(/[^a-zA-Z0-9_.-]/g, '-') || 'app';
-        const output = `${namespace}/converted-${imageName}:latest`;
-        await execFileAsync('unikraft', ['--config', configPath, 'build', dir, '--output', output], { env, timeout: 30 * 60 * 1000, maxBuffer: 20 * 1024 * 1024 });
-      } finally {
-        await fs.rm(dir, { recursive: true, force: true });
-      }
-    }).then(() => revalidatePath('/dashboard/images')).catch((error) => console.error('[Unikraft] image conversion failed:', error));
-    return { success: true };
-  } catch (error) {
-    return { error: commandDetails(error, '转换任务启动失败。') };
-  }
+export async function listConversionJobs(): Promise<{ jobs: ConversionJob[]; error?: string }> {
+  if (!(await getToken())) return { jobs: [], error: 'Unauthorized' };
+  try { return { jobs: await listJobs() }; } catch (error) { return { jobs: [], error: commandDetails(error, '无法读取转换任务。') }; }
+}
+
+export async function retryConversionJob(id: string): Promise<{ success?: true; error?: string }> {
+  const token = await getToken();
+  if (!token) return { error: 'Unauthorized' };
+  const job = (await listJobs()).find((item) => item.id === id);
+  if (!job || job.status !== 'failed') return { error: '只能重试失败的转换任务。' };
+  const replacement = await createJob(job.sourceImage);
+  enqueueConversion(replacement.id, token, replacement.sourceImage);
+  revalidatePath('/dashboard/images');
+  return { success: true };
 }
