@@ -12,6 +12,10 @@ import { getToken } from './auth';
 const execFileAsync = promisify(execFile);
 const CONVERTED_IMAGE_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:@/-]*converted-[a-zA-Z0-9._-]+(?::[a-zA-Z0-9._-]+)?$/;
 
+function isMetroIndexReference(image: string) {
+  return /^index\.[a-z0-9-]+\.unikraft\.cloud\//i.test(image.replace(/^oci:\/\//, '').trim());
+}
+
 function normalizePublishedPort(value: string) {
   if (value.includes('/')) return value;
   const match = value.match(/^(\d+):(\d+)$/);
@@ -34,7 +38,7 @@ async function runConvertedImage(
   portsRaw: string,
   formData: FormData,
 ) {
-  if (!CONVERTED_IMAGE_PATTERN.test(image)) {
+  if (isMetroIndexReference(image) || !CONVERTED_IMAGE_PATTERN.test(image)) {
     throw new Error('请选择临时镜像列表中的已转换镜像。');
   }
   const ports = portsRaw.split('\n').map((value) => normalizePublishedPort(value.trim())).filter(Boolean);

@@ -50,8 +50,17 @@ function normalizeRows(value: unknown): Record<string, unknown>[] {
 
 function text(value: unknown): string { return typeof value === 'string' || typeof value === 'number' ? String(value) : ''; }
 
+function isMetroIndexReference(reference: string) {
+  return /^index\.[a-z0-9-]+\.unikraft\.cloud\//i.test(reference.replace(/^oci:\/\//, '').trim());
+}
+
+function dedupeImages(images: TemporaryImage[]) {
+  return Array.from(new Map(images.map((image) => [image.reference, image])).values());
+}
+
 function normalize(row: Record<string, unknown>, metro: string): TemporaryImage | null {
-  const repository = text(row.ref || row.repository || row.name || row.image || row.reference);
+  const repository = text(row.ref || row.repository || row.name || row.image || row.reference).replace(/^oci:\/\//, '').trim();
+  if (isMetroIndexReference(repository)) return null;
   const tag = text(row.tag);
   const reference = tag && !repository.endsWith(`:${tag}`) ? `${repository}:${tag}` : repository;
   if (!reference || !TEMP_IMAGE_PATTERN.test(reference)) return null;
@@ -63,9 +72,11 @@ function parseTable(output: string, metro: string): TemporaryImage[] {
   return plainOutput.split(/\r?\n/).flatMap((line) => {
     const match = line.trim().match(/^([^\s]+)\s+(.+)$/);
     if (!match) return [];
-    const reference = match[1].includes(':') ? match[1] : `${match[1]}:latest`;
-    if (!TEMP_IMAGE_PATTERN.test(reference)) return [];
-    return [{ reference, metro, size: match[2].trim(), createdAt: '-' }];
+    const reference = match[1].replace(/^oci:\/\//, '');
+    if (isMetroIndexReference(reference)) return [];
+    const taggedReference = reference.includes(':') || reference.includes('@') ? reference : `${reference}:latest`;
+    if (!TEMP_IMAGE_PATTERN.test(taggedReference)) return [];
+    return [{ reference: taggedReference, metro, size: match[2].trim(), createdAt: '-' }];
   });
 }
 
@@ -77,15 +88,15 @@ export async function listTemporaryImages(): Promise<{ images: TemporaryImage[];
       const { stdout } = await execFileAsync(UNIKRAFT_CLI, ['--config', configPath, 'image', 'list', '--output', 'json'], { env, maxBuffer: 5 * 1024 * 1024 });
       try {
         const images = normalizeRows(JSON.parse(stdout)).map((row) => normalize(row, '-')).filter((image): image is TemporaryImage => image !== null);
-        return { images: images.length > 0 ? images : parseTable(stdout, '-') };
-      } catch { return { images: parseTable(stdout, '-') }; }
+        return { images: dedupeImages(images.length > 0 ? images : parseTable(stdout, '-')) };
+      } catch { return { images: dedupeImages(parseTable(stdout, '-')) }; }
     });
   } catch (error) {
     return { images: [], error: error instanceof Error ? error.message : 'Unable to list images.' };
   }
 }
 
-export async function deleteTemporaryImage(reference: string, metro: string): Promise<{ success?: true; error?: string }> {
+export async function deleteTemporaryImage(reference: string, _metro: string): Promise<{ success?: true; error?: string }> {
   const token = await getToken();
   if (!token) return { error: 'Unauthorized' };
   if (!TEMP_IMAGE_PATTERN.test(reference)) return { error: 'Only temporary images can be deleted.' };
