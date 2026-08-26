@@ -14,6 +14,12 @@ const TEMP_IMAGE_PATTERN = /(?:^|\/)(?:\d{10,}|docker-\d{10,}|converted-[^/:]+)(
 
 export interface TemporaryImage { reference: string; metro: string; size: string; createdAt: string }
 
+function commandDetails(error: unknown, fallback: string) {
+  const message = error instanceof Error ? error.message : '';
+  const stderr = typeof error === 'object' && error !== null && 'stderr' in error ? String(error.stderr || '') : '';
+  return [message, stderr].filter(Boolean).join('\n').trim() || fallback;
+}
+
 async function withLogin<T>(token: string, action: (configPath: string, env: NodeJS.ProcessEnv) => Promise<T>): Promise<T> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'unikraft-login-'));
   const tokenPath = path.join(dir, 'token');
@@ -94,5 +100,45 @@ export async function deleteTemporaryImage(reference: string, metro: string): Pr
       typeof error === 'object' && error !== null && 'stderr' in error ? String(error.stderr || '') : '',
     ].filter(Boolean).join('\n').trim();
     return { error: details || 'Unable to delete image.' };
+  }
+}
+
+export async function convertDockerImage(
+  _previousState: { success?: true; error?: string } | null,
+  formData: FormData,
+): Promise<{ success?: true; error?: string }> {
+  const token = await getToken();
+  if (!token) return { error: 'Unauthorized' };
+  const image = String(formData.get('image') || '').trim();
+  if (!image || /[\r\n]/.test(image) || !/^[a-zA-Z0-9][a-zA-Z0-9._:@/-]*$/.test(image)) {
+    return { error: '请输入有效的 Docker 镜像引用。' };
+  }
+
+  try {
+    void withLogin(token, async (configPath, env) => {
+      await execFileAsync('docker', ['pull', image], { env, timeout: 30 * 60 * 1000, maxBuffer: 20 * 1024 * 1024 });
+      const inspect = await execFileAsync('docker', ['image', 'inspect', image], { env, maxBuffer: 5 * 1024 * 1024 });
+      const metadata = JSON.parse(inspect.stdout)[0]?.Config || {};
+      const command = [...(Array.isArray(metadata.Entrypoint) ? metadata.Entrypoint : []), ...(Array.isArray(metadata.Cmd) ? metadata.Cmd : [])];
+      if (command.length === 0) throw new Error('Docker 镜像没有 Entrypoint 或 Cmd。');
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'unikraft-convert-'));
+      try {
+        await fs.writeFile(path.join(dir, 'Dockerfile'), `FROM ${image}\n`);
+        await fs.writeFile(path.join(dir, 'Kraftfile'), [
+          'spec: v0.7', '', 'runtime: base-compat:latest', '', 'rootfs:',
+          '  source:', '    path: ./Dockerfile', '    type: dockerfile', '  format: erofs', '',
+          `cmd: ${JSON.stringify(command)}`,
+        ].join('\n'));
+        const namespace = process.env.UNIKRAFT_IMAGE_NAMESPACE || 'dghdnk';
+        const imageName = image.split('/').pop()?.replace(/[^a-zA-Z0-9_.-]/g, '-') || 'app';
+        const output = `${namespace}/converted-${imageName}:latest`;
+        await execFileAsync('unikraft', ['--config', configPath, 'build', dir, '--output', output], { env, timeout: 30 * 60 * 1000, maxBuffer: 20 * 1024 * 1024 });
+      } finally {
+        await fs.rm(dir, { recursive: true, force: true });
+      }
+    }).then(() => revalidatePath('/dashboard/images')).catch((error) => console.error('[Unikraft] image conversion failed:', error));
+    return { success: true };
+  } catch (error) {
+    return { error: commandDetails(error, '转换任务启动失败。') };
   }
 }

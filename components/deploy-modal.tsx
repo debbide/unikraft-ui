@@ -12,7 +12,13 @@ import { Loader2, Plus } from 'lucide-react';
 const METROS = ['dal', 'sfo', 'was', 'fra', 'sin'];
 type VolumeOption = { name: string; state?: string };
 
-export function DeployModal({ volumesByMetro = {} }: { volumesByMetro?: Record<string, VolumeOption[]> }) {
+export function DeployModal({
+  volumesByMetro = {},
+  images = [],
+}: {
+  volumesByMetro?: Record<string, VolumeOption[]>;
+  images?: string[];
+}) {
   const [open, setOpen] = useState(false);
   const [metro, setMetro] = useState('sin');
   const [state, formAction, pending] = useActionState(deployInstance, null as any);
@@ -33,7 +39,16 @@ export function DeployModal({ volumesByMetro = {} }: { volumesByMetro?: Record<s
         <form action={formAction} className="grid gap-4 py-4">
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="image" className="text-right">镜像 (Image)</Label>
-            <Input id="image" name="image" placeholder="例如: nginx:latest 或 maladr/debian-ssh" className="col-span-3" required />
+            <div className="col-span-3">
+              <Select name="image" required>
+                <SelectTrigger id="image" className="w-full">
+                  <SelectValue placeholder={images.length ? '选择已转换镜像' : '暂无已转换镜像'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {images.map((image) => <SelectItem key={image} value={image}>{image}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           
           <div className="grid grid-cols-4 items-center gap-4">

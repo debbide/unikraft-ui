@@ -4,6 +4,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DeployModal } from '@/components/deploy-modal';
 import { DeleteInstanceButton } from '@/components/delete-instance-button';
+import { listTemporaryImages } from '@/app/actions/images';
 
 export default async function InstancesPage() {
   const token = await getToken();
@@ -15,6 +16,7 @@ export default async function InstancesPage() {
   // 获取所有区的实例列表
   let instances: any[] = [];
   const volumesByMetro: Record<string, { name: string; state?: string }[]> = {};
+  const { images } = await listTemporaryImages();
   try {
     const results = await Promise.allSettled(
       METROS.map(metro => fetchUnikraft<any>('/v1/instances', token, {}, metro).then(res => ({ metro, instances: res?.data?.instances || [] })))
@@ -48,7 +50,7 @@ export default async function InstancesPage() {
           <h1 className="text-3xl font-bold tracking-tight">实例管理 (Instances)</h1>
           <p className="text-muted-foreground mt-2">在这里查看和管理您运行在 Unikraft Cloud 上的所有微内核实例。</p>
         </div>
-        <DeployModal volumesByMetro={volumesByMetro} />
+        <DeployModal volumesByMetro={volumesByMetro} images={images.map((image) => image.reference)} />
       </div>
 
       <Card>
