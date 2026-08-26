@@ -14,6 +14,7 @@ export default async function InstancesPage() {
 
   // 获取所有区的实例列表
   let instances: any[] = [];
+  const volumesByMetro: Record<string, { name: string; state?: string }[]> = {};
   try {
     const results = await Promise.allSettled(
       METROS.map(metro => fetchUnikraft<any>('/v1/instances', token, {}, metro).then(res => ({ metro, instances: res?.data?.instances || [] })))
@@ -25,6 +26,17 @@ export default async function InstancesPage() {
         instances.push(...mapped);
       }
     });
+    await Promise.all(METROS.map(async (metro) => {
+      try {
+        const result = await fetchUnikraft<any>('/v1/volumes', token, {}, metro);
+        const volumes = result?.data?.volumes || result?.volumes || [];
+        volumesByMetro[metro] = volumes
+          .filter((volume: any) => volume?.name && volume?.state === 'available')
+          .map((volume: any) => ({ name: String(volume.name), state: volume.state }));
+      } catch {
+        volumesByMetro[metro] = [];
+      }
+    }));
   } catch (err: any) {
     return <div className="text-red-500 p-8">获取实例列表失败: {err.message}</div>;
   }
@@ -36,7 +48,7 @@ export default async function InstancesPage() {
           <h1 className="text-3xl font-bold tracking-tight">实例管理 (Instances)</h1>
           <p className="text-muted-foreground mt-2">在这里查看和管理您运行在 Unikraft Cloud 上的所有微内核实例。</p>
         </div>
-        <DeployModal />
+        <DeployModal volumesByMetro={volumesByMetro} />
       </div>
 
       <Card>

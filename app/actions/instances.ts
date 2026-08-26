@@ -64,7 +64,8 @@ async function runUnikraft(image: string, token: string, metro: string, portsRaw
     if (name) args.push('--name', name);
     const envRaw = String(formData.get('env') || '');
     envRaw.split('\n').map((value) => value.trim()).filter(Boolean).forEach((value) => args.push('--env', value));
-    const volumeName = String(formData.get('volume_name') || '').trim();
+    const requestedVolume = String(formData.get('volume_name') || '').trim();
+    const volumeName = requestedVolume === '__none' ? '' : requestedVolume;
     if (volumeName) {
       const volumeAt = String(formData.get('volume_at') || '/data').trim();
       if (!volumeAt.startsWith('/') || /[\r\n]/.test(volumeAt)) throw new Error('Invalid volume mount path.');

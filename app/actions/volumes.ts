@@ -93,7 +93,11 @@ export async function deleteVolume(name: string, metro: string): Promise<{ succe
   const env = { ...process.env, KRAFTCLOUD_TOKEN: token };
   try {
     await execFileAsync('unikraft', ['--config', configPath, 'login', '--no-browser', '--token', tokenPath], { env, timeout: 120000 });
-    await execFileAsync('unikraft', ['--config', configPath, 'volumes', 'delete', name, '--metro', metro], { env, timeout: 120000 });
+    await execFileAsync(
+      'unikraft',
+      ['--config', configPath, '--metro', metro, 'volumes', 'delete', name],
+      { env, timeout: 120000 },
+    );
     revalidatePath('/dashboard/volumes');
     return { success: true };
   } catch (error) {

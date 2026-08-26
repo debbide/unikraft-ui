@@ -10,10 +10,13 @@ import { deployInstance } from '@/app/actions/instances';
 import { Loader2, Plus } from 'lucide-react';
 
 const METROS = ['dal', 'sfo', 'was', 'fra', 'sin'];
+type VolumeOption = { name: string; state?: string };
 
-export function DeployModal() {
+export function DeployModal({ volumesByMetro = {} }: { volumesByMetro?: Record<string, VolumeOption[]> }) {
   const [open, setOpen] = useState(false);
+  const [metro, setMetro] = useState('sin');
   const [state, formAction, pending] = useActionState(deployInstance, null as any);
+  const availableVolumes = volumesByMetro[metro] || [];
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -36,7 +39,7 @@ export function DeployModal() {
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="metro" className="text-right">地区 (Metro)</Label>
             <div className="col-span-3">
-              <Select name="metro" defaultValue="sin" required>
+              <Select name="metro" value={metro} onValueChange={(value) => value && setMetro(value)} required>
                 <SelectTrigger>
                   <SelectValue placeholder="选择区域" />
                 </SelectTrigger>
@@ -63,16 +66,21 @@ export function DeployModal() {
           </div>
 
           <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="disk_mb" className="text-right">存储容量 (Disk)</Label>
-            <div className="col-span-3 flex items-center gap-2">
-              <Input id="disk_mb" name="disk_mb" type="number" defaultValue="0" min="0" step="1024" placeholder="0 表示不挂载" required />
-              <span className="text-sm text-muted-foreground">MB</span>
+            <Label htmlFor="volume_name" className="text-right">存储卷</Label>
+            <div className="col-span-3">
+              <Select key={metro} name="volume_name" defaultValue="__none">
+                <SelectTrigger id="volume_name"><SelectValue placeholder={availableVolumes.length ? '选择已创建的存储卷' : '该 Metro 暂无可用存储卷'} /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none">不挂载存储卷</SelectItem>
+                  {availableVolumes.map((volume) => <SelectItem key={volume.name} value={volume.name}>{volume.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="volume_at" className="text-right">挂载路径</Label>
-            <Input id="volume_at" name="volume_at" defaultValue="/data" placeholder="例如: /data" className="col-span-3" />
+            <Input id="volume_at" name="volume_at" defaultValue="/app/server/data" placeholder="例如: /data" className="col-span-3" />
           </div>
 
           <div className="grid grid-cols-4 items-start gap-4">
