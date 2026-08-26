@@ -20,6 +20,10 @@ function commandDetails(error: unknown, fallback: string) {
   return [message, stderr].filter(Boolean).join('\n').trim() || fallback;
 }
 
+function shellQuote(value: string) {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
 async function withLogin<T>(token: string, action: (configPath: string, env: NodeJS.ProcessEnv) => Promise<T>): Promise<T> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'unikraft-login-'));
   const tokenPath = path.join(dir, 'token');
@@ -119,15 +123,19 @@ export async function convertDockerImage(
       await execFileAsync('docker', ['pull', image], { env, timeout: 30 * 60 * 1000, maxBuffer: 20 * 1024 * 1024 });
       const inspect = await execFileAsync('docker', ['image', 'inspect', image], { env, maxBuffer: 5 * 1024 * 1024 });
       const metadata = JSON.parse(inspect.stdout)[0]?.Config || {};
-      const command = [...(Array.isArray(metadata.Entrypoint) ? metadata.Entrypoint : []), ...(Array.isArray(metadata.Cmd) ? metadata.Cmd : [])];
+      const command = [...(Array.isArray(metadata.Entrypoint) ? metadata.Entrypoint : []), ...(Array.isArray(metadata.Cmd) ? metadata.Cmd : [])].map(String);
       if (command.length === 0) throw new Error('Docker 镜像没有 Entrypoint 或 Cmd。');
+      const workingDir = typeof metadata.WorkingDir === 'string' ? metadata.WorkingDir.trim() : '';
+      const runtimeCommand = workingDir
+        ? ['/bin/sh', '-c', `cd ${shellQuote(workingDir)} && exec ${command.map(shellQuote).join(' ')}`]
+        : command;
       const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'unikraft-convert-'));
       try {
         await fs.writeFile(path.join(dir, 'Dockerfile'), `FROM ${image}\n`);
         await fs.writeFile(path.join(dir, 'Kraftfile'), [
           'spec: v0.7', '', 'runtime: base-compat:latest', '', 'rootfs:',
           '  source:', '    path: ./Dockerfile', '    type: dockerfile', '  format: erofs', '',
-          `cmd: ${JSON.stringify(command)}`,
+          `cmd: ${JSON.stringify(runtimeCommand)}`,
         ].join('\n'));
         const namespace = process.env.UNIKRAFT_IMAGE_NAMESPACE || 'dghdnk';
         const imageName = image.split('/').pop()?.replace(/[^a-zA-Z0-9_.-]/g, '-') || 'app';
