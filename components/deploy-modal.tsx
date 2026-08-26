@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useActionState, useEffect } from 'react';
+import { useState, useActionState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -14,13 +14,6 @@ const METROS = ['dal', 'sfo', 'was', 'fra', 'sin'];
 export function DeployModal() {
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useActionState(deployInstance, null as any);
-
-  useEffect(() => {
-    if (state?.success) {
-      setOpen(false);
-      // Optional: Show a toast here
-    }
-  }, [state]);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
