@@ -28,7 +28,7 @@ export async function buildExample(jobId: string, token: string, templateId: str
     await execFileAsync('git', ['-C', root, 'fetch', '--depth', '1', 'origin', EXAMPLES_COMMIT], { env, timeout: 120000, maxBuffer: 5 * 1024 * 1024 });
     await execFileAsync('git', ['-C', root, 'checkout', '--detach', EXAMPLES_COMMIT], { env, timeout: 120000 });
     const directory = path.join(root, template.directory);
-    await fs.access(path.join(directory, 'Kraftfile')); await fs.access(path.join(directory, 'Dockerfile'));
+    await fs.access(path.join(directory, 'Kraftfile'));
     await updateJob(jobId, { status: 'building', outputImage: output });
     await execFileAsync(cli, ['--config', configPath, 'build', directory, '--output', output], { env, timeout: 30 * 60 * 1000, maxBuffer: 20 * 1024 * 1024 });
     await updateJob(jobId, { status: 'completed', outputImage: output });
