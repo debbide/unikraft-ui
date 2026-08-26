@@ -48,5 +48,11 @@ export async function fetchUnikraft<T>(
     throw new Error(errorMessage);
   }
 
+  // DELETE endpoints may return 204 No Content. Calling response.json() on
+  // an empty response throws even though the request itself succeeded.
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
   return response.json();
 }

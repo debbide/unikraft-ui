@@ -83,12 +83,12 @@ export async function createVolume(
   }
 }
 
-export async function deleteVolume(name: string, metro: string): Promise<{ success?: true; error?: string }> {
+export async function deleteVolume(volumeId: string, metro: string): Promise<{ success?: true; error?: string }> {
   const token = await getToken();
   if (!token) return { error: 'Unauthorized' };
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$/.test(name) || !/^[a-z]{3}$/.test(metro)) return { error: 'Invalid volume.' };
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,99}$/.test(volumeId) || !/^[a-z]{3}$/.test(metro)) return { error: 'Invalid volume.' };
   try {
-    await fetchUnikraft(`/v1/volumes/${encodeURIComponent(name)}`, token, { method: 'DELETE' }, metro);
+    await fetchUnikraft(`/v1/volumes/${encodeURIComponent(volumeId)}`, token, { method: 'DELETE' }, metro);
     revalidatePath('/dashboard/volumes');
     return { success: true };
   } catch (error) {

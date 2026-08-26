@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 interface VolumeRow extends Record<string, unknown> {
   metro: string;
+  uuid?: string;
   name?: string;
   state?: string;
   size_mb?: number;
@@ -63,6 +64,7 @@ export default async function VolumesPage() {
             <TableBody>
               {volumes.map((volume) => {
                 const name = String(volume.name || '');
+                const uuid = String(volume.uuid || volume.id || '');
                 const metro = volume.metro;
                 const state = String(volume.state || '');
 
@@ -75,6 +77,7 @@ export default async function VolumesPage() {
                     <TableCell>{volume.attached_to?.name || '-'}</TableCell>
                     <TableCell className="text-right">
                       <DeleteVolumeButton
+                        volumeId={uuid || name}
                         name={name}
                         metro={metro}
                         disabled={state !== 'available'}
