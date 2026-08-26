@@ -1,6 +1,6 @@
 FROM node:20-bullseye
 
-RUN apt-get update && apt-get install -y curl ca-certificates docker.io && \
+RUN apt-get update && apt-get install -y curl ca-certificates docker.io git && \
     rm -rf /var/lib/apt/lists/*
 
 RUN curl --proto '=https' --tlsv1.2 -fsSL https://unikraft.com/cli/install.sh | sh

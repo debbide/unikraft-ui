@@ -1,6 +1,6 @@
 import { ReactNode } from 'react';
 import { SidebarProvider, Sidebar, SidebarContent, SidebarHeader, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarFooter } from '@/components/ui/sidebar';
-import { Server, HardDrive, LayoutDashboard, LogOut, PackageOpen } from 'lucide-react';
+import { Server, HardDrive, LayoutDashboard, LogOut, PackageOpen, Boxes } from 'lucide-react';
 import { logout } from '@/app/actions/auth';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
@@ -15,6 +15,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           </SidebarHeader>
           <SidebarContent className="p-2 gap-2 mt-4">
             <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton render={<Link href="/dashboard/examples" className="flex items-center gap-2" />}>
+                  <Boxes className="w-5 h-5" /><span>官方模板</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton render={<Link href="/dashboard" className="flex items-center gap-2" />}>
                   <LayoutDashboard className="w-5 h-5" />

@@ -12,8 +12,8 @@ const labels: Record<ConversionJob['status'], string> = {
   queued: '排队中', pulling: '拉取镜像', inspecting: '读取配置', building: '构建上传', completed: '已完成', failed: '失败',
 };
 
-export function ConversionJobs({ initialJobs }: { initialJobs: ConversionJob[] }) {
-  const [jobs, setJobs] = useState(initialJobs.filter((job) => job.status !== 'failed'));
+export function ConversionJobs({ initialJobs, sourcePrefix }: { initialJobs: ConversionJob[]; sourcePrefix?: string }) {
+  const [jobs, setJobs] = useState(initialJobs);
   const [error, setError] = useState('');
   const [pending, startTransition] = useTransition();
   const router = useRouter();
@@ -24,22 +24,23 @@ export function ConversionJobs({ initialJobs }: { initialJobs: ConversionJob[] }
     async function refresh() {
       const result = await listConversionJobs();
       if (disposed) return;
-      const newlyCompleted = result.jobs.some((job) => job.status === 'completed' && !knownCompleted.current.has(job.id));
-      result.jobs.filter((job) => job.status === 'completed').forEach((job) => knownCompleted.current.add(job.id));
-      setJobs(result.jobs.filter((job) => job.status !== 'failed'));
+      const visibleJobs = sourcePrefix ? result.jobs.filter((job) => job.sourceImage.startsWith(sourcePrefix)) : result.jobs;
+      const newlyCompleted = visibleJobs.some((job) => job.status === 'completed' && !knownCompleted.current.has(job.id));
+      visibleJobs.filter((job) => job.status === 'completed').forEach((job) => knownCompleted.current.add(job.id));
+      setJobs(visibleJobs);
       setError(result.error || '');
       if (newlyCompleted) router.refresh();
     }
     const timer = window.setInterval(refresh, 3000);
     return () => { disposed = true; window.clearInterval(timer); };
-  }, [router]);
+  }, [router, sourcePrefix]);
 
   function retry(id: string) {
     startTransition(async () => {
       const result = await retryConversionJob(id);
       if (result.error) setError(result.error);
       const refreshed = await listConversionJobs();
-       setJobs(refreshed.jobs.filter((job) => job.status !== 'failed'));
+      setJobs(sourcePrefix ? refreshed.jobs.filter((job) => job.sourceImage.startsWith(sourcePrefix)) : refreshed.jobs);
     });
   }
 

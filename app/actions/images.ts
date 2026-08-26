@@ -8,7 +8,7 @@ import os from 'os';
 import path from 'path';
 import { getToken } from './auth';
 import { createJob, findActiveJob, listJobs } from '@/lib/image-conversion/jobs';
-import { enqueueConversion, recoverJobs } from '@/lib/image-conversion/worker';
+import { enqueueConversion, enqueueJob, recoverJobs } from '@/lib/image-conversion/worker';
 import type { ConversionJob } from '@/lib/image-conversion/types';
 
 const execFileAsync = promisify(execFile);
@@ -102,7 +102,7 @@ export async function convertDockerImage(_previousState: { success?: true; error
 
 export async function listConversionJobs(): Promise<{ jobs: ConversionJob[]; error?: string }> {
   if (!(await getToken())) return { jobs: [], error: 'Unauthorized' };
-  try { return { jobs: (await listJobs()).filter((job) => job.status !== 'failed') }; } catch (error) { return { jobs: [], error: commandDetails(error, '无法读取转换任务。') }; }
+  try { return { jobs: await listJobs() }; } catch (error) { return { jobs: [], error: commandDetails(error, '无法读取转换任务。') }; }
 }
 
 export async function retryConversionJob(id: string): Promise<{ success?: true; error?: string }> {
@@ -111,7 +111,7 @@ export async function retryConversionJob(id: string): Promise<{ success?: true; 
   const job = (await listJobs()).find((item) => item.id === id);
   if (!job || job.status !== 'failed') return { error: '只能重试失败的转换任务。' };
   const replacement = await createJob(job.sourceImage);
-  enqueueConversion(replacement.id, token, replacement.sourceImage);
+  enqueueJob(replacement.id, token, replacement.sourceImage);
   revalidatePath('/dashboard/images');
   return { success: true };
 }
