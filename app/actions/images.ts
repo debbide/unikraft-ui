@@ -29,10 +29,11 @@ async function withLogin<T>(token: string, action: (configPath: string, env: Nod
 }
 
 function normalizeRows(value: unknown): Record<string, unknown>[] {
-  if (Array.isArray(value)) return value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object');
+  if (Array.isArray(value)) return value.flatMap(normalizeRows);
   if (value && typeof value === 'object') {
     const record = value as Record<string, unknown>;
-    for (const key of ['images', 'items', 'data']) if (Array.isArray(record[key])) return normalizeRows(record[key]);
+    const rows = typeof record.ref === 'string' ? [record] : [];
+    return rows.concat(Object.values(record).flatMap(normalizeRows));
   }
   return [];
 }
@@ -40,7 +41,7 @@ function normalizeRows(value: unknown): Record<string, unknown>[] {
 function text(value: unknown): string { return typeof value === 'string' || typeof value === 'number' ? String(value) : ''; }
 
 function normalize(row: Record<string, unknown>, metro: string): TemporaryImage | null {
-  const repository = text(row.repository || row.name || row.image || row.reference);
+  const repository = text(row.ref || row.repository || row.name || row.image || row.reference);
   const tag = text(row.tag);
   const reference = tag && !repository.endsWith(`:${tag}`) ? `${repository}:${tag}` : repository;
   if (!reference || !TEMP_IMAGE_PATTERN.test(reference)) return null;
