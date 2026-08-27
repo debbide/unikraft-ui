@@ -18,7 +18,6 @@ export function ConvertImageForm() {
         <SelectTrigger id="runtime" className="w-52"><SelectValue /></SelectTrigger>
         <SelectContent>
           <SelectItem value="base-compat:latest">普通版 runtime</SelectItem>
-          <SelectItem value="base-compat:latest-dbg">Debug 版（排障）</SelectItem>
         </SelectContent>
       </Select>
       <Button type="submit" disabled={pending}>
