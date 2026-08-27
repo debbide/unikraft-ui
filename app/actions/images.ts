@@ -187,31 +187,47 @@ async function enrichImageSizes(
 ): Promise<TemporaryImage[]> {
   return Promise.all(
     images.map(async (image) => {
-      if (image.size !== "-") return image;
-      try {
-        const { stdout } = await execFileAsync(
-          UNIKRAFT_CLI,
-          [
-            "--config",
-            configPath,
-            "image",
-            "get",
-            image.reference,
-            "--output",
-            "json",
-          ],
-          { env, maxBuffer: 1024 * 1024, timeout: 120000 },
-        );
-        const rows = normalizeRows(JSON.parse(stdout));
-        const details = dedupeImages(
-          rows
-            .map((row) => normalize(row, image.metro))
-            .filter((item): item is TemporaryImage => item !== null),
-        ).find((item) => item.reference === image.reference);
-        return mergeImage(image, details || image);
-      } catch {
+      if (image.size !== "-" && image.createdAt !== "-" && image.digest)
         return image;
+
+      const taggedReferences = image.tags.map(
+        (tag) => `${image.reference}:${tag}`,
+      );
+      const lookupReferences = Array.from(
+        new Set([
+          ...taggedReferences.map((reference) => `unikraft.io/${reference}`),
+          ...taggedReferences,
+          image.reference,
+        ]),
+      );
+
+      for (const lookupReference of lookupReferences) {
+        try {
+          const { stdout } = await execFileAsync(
+            UNIKRAFT_CLI,
+            [
+              "--config",
+              configPath,
+              "image",
+              "get",
+              lookupReference,
+              "--output",
+              "json",
+            ],
+            { env, maxBuffer: 1024 * 1024, timeout: 120000 },
+          );
+          const details = dedupeImages(
+            normalizeRows(JSON.parse(stdout))
+              .map((row) => normalize(row, image.metro))
+              .filter((item): item is TemporaryImage => item !== null),
+          ).find((item) => item.reference === image.reference);
+          if (details) return mergeImage(image, details);
+        } catch {
+          // Try the next accepted CLI reference form.
+        }
       }
+
+      return image;
     }),
   );
 }
