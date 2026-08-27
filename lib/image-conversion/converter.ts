@@ -8,17 +8,6 @@ const UNIKRAFT_CLI = process.env.UNIKRAFT_CLI || 'unikraft';
 const DEFAULT_RUNTIME = process.env.UNIKRAFT_RUNTIME || 'base-compat:latest';
 export const SUPPORTED_RUNTIMES = ['base-compat:latest', 'base-compat:latest-dbg'] as const;
 
-function buildArchitectures() {
-  const configuredArchitectures = process.env.UNIKRAFT_BUILD_ARCH || 'x86_64,arm64';
-  const architectures = configuredArchitectures
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean);
-  const invalid = architectures.filter((value) => !['x86_64', 'arm64'].includes(value));
-  if (invalid.length) throw new Error(`UNIKRAFT_BUILD_ARCH 包含无效架构：${invalid.join(', ')}。`);
-  return Array.from(new Set(architectures));
-}
-
 function imageSummary(value: unknown): string {
   const rows = Array.isArray(value) ? value : [value];
   const summary = rows.flatMap((item) => {
@@ -79,11 +68,8 @@ export async function convertImage(jobId: string, token: string, image: string, 
     const outputImage = `${namespace}/converted-${imageName}-${jobId.slice(0, 8)}:latest`;
     await updateJob(jobId, { status: 'building', outputImage });
     logger.append('\n开始构建并上传镜像...\n');
-    const architectures = buildArchitectures();
-    logger.append(`构建 runtime=${runtime}; arch=${architectures.length ? architectures.join(',') : 'runtime 默认平台'}\n`);
-    const buildArgs = ['--config', configPath, 'build', dir];
-    architectures.forEach((arch) => buildArgs.push('--arch', arch));
-    buildArgs.push('--output', outputImage);
+    logger.append(`构建 runtime=${runtime}; arch=Kraftfile/runtime 默认平台\n`);
+    const buildArgs = ['--config', configPath, 'build', dir, '--output', outputImage];
     await runCommand(UNIKRAFT_CLI, buildArgs, { env, timeout: 30 * 60 * 1000, maxBuffer: 20 * 1024 * 1024, onOutput: logger.append });
     try {
       const inspect = await runCommand(UNIKRAFT_CLI, ['--config', configPath, 'image', 'get', outputImage, '--output', 'json'], { env, timeout: 120000, maxBuffer: 5 * 1024 * 1024 });
