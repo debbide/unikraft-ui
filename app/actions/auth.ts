@@ -6,7 +6,9 @@ import { redirect } from 'next/navigation';
 
 const TOKEN_COOKIE_NAME = 'unikraft_pat';
 
-export async function login(prevState: any, formData: FormData) {
+type LoginState = { error?: string } | null;
+
+export async function login(_prevState: LoginState, formData: FormData) {
   const token = formData.get('token');
   if (!token || typeof token !== 'string') {
     return { error: 'Token is required' };
@@ -26,8 +28,8 @@ export async function login(prevState: any, formData: FormData) {
       maxAge: 60 * 60 * 24 * 30, // 30 days
     });
 
-  } catch (error: any) {
-    if (error.message && error.message.includes('401')) {
+  } catch (error: unknown) {
+    if (error instanceof Error && error.message.includes('401')) {
       return { error: 'Invalid Token: 认证失败 (401)' };
     }
     // 其他错误（比如 No API endpoint 404 等）都说明 Token 本身是有效的，只是路由不对

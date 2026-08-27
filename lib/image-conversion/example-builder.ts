@@ -6,6 +6,12 @@ import { EXAMPLES_COMMIT, EXAMPLES_REPOSITORY, getExampleTemplate } from '@/lib/
 import { runCommand } from './command';
 
 const cli = process.env.UNIKRAFT_CLI || 'unikraft';
+function buildArchitectures() {
+  const architectures = (process.env.UNIKRAFT_BUILD_ARCH || '').split(',').map((value) => value.trim()).filter(Boolean);
+  const invalid = architectures.filter((value) => !['x86_64', 'arm64'].includes(value));
+  if (invalid.length) throw new Error(`UNIKRAFT_BUILD_ARCH 包含无效架构：${invalid.join(', ')}。`);
+  return Array.from(new Set(architectures));
+}
 const details = (error: unknown) => String((error as { message?: string }).message || '官方示例构建失败。');
 
 export async function buildExample(jobId: string, token: string, templateId: string) {
@@ -32,7 +38,12 @@ export async function buildExample(jobId: string, token: string, templateId: str
     await fs.access(path.join(directory, 'Kraftfile'));
     await updateJob(jobId, { status: 'building', outputImage: output });
     logger.append('\n开始构建并上传镜像...\n');
-    await runCommand(cli, ['--config', configPath, 'build', directory, '--output', output], { env, timeout: 30 * 60 * 1000, maxBuffer: 20 * 1024 * 1024, onOutput: logger.append });
+    const architectures = buildArchitectures();
+    logger.append(`构建 arch=${architectures.length ? architectures.join(',') : 'Kraftfile/runtime 默认平台'}\n`);
+    const buildArgs = ['--config', configPath, 'build', directory];
+    architectures.forEach((arch) => buildArgs.push('--arch', arch));
+    buildArgs.push('--output', output);
+    await runCommand(cli, buildArgs, { env, timeout: 30 * 60 * 1000, maxBuffer: 20 * 1024 * 1024, onOutput: logger.append });
     await logger.flush();
     await updateJob(jobId, { status: 'completed', outputImage: output });
   } catch (error) { await logger.flush(); await updateJob(jobId, { status: 'failed', error: details(error) }); }

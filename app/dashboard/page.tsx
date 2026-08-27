@@ -1,5 +1,5 @@
 import { getToken } from '@/app/actions/auth';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export default async function DashboardPage() {
   const token = await getToken();

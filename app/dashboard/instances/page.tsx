@@ -6,6 +6,20 @@ import { DeployModal } from '@/components/deploy-modal';
 import { DeleteInstanceButton } from '@/components/delete-instance-button';
 import { listTemporaryImages } from '@/app/actions/images';
 
+type Instance = {
+  uuid: string;
+  name: string;
+  state: string;
+  image: string;
+  memory_mb: number;
+  metro: string;
+  service_group?: { domains?: Array<{ fqdn?: string }> };
+};
+
+type InstanceResponse = { data?: { instances?: Omit<Instance, 'metro'>[] } };
+type Volume = { name?: unknown; state?: unknown };
+type VolumeResponse = { data?: { volumes?: Volume[] }; volumes?: Volume[] };
+
 export default async function InstancesPage() {
   const token = await getToken();
 
@@ -14,34 +28,35 @@ export default async function InstancesPage() {
   }
 
   // 获取所有区的实例列表
-  let instances: any[] = [];
+  const instances: Instance[] = [];
   const volumesByMetro: Record<string, { name: string; state?: string }[]> = {};
   // 实例页只需要镜像引用；避免为每个镜像额外执行 image get，缩短菜单切换等待时间。
   const { images } = await listTemporaryImages({ includeSizes: false });
   try {
     const results = await Promise.allSettled(
-      METROS.map(metro => fetchUnikraft<any>('/v1/instances', token, {}, metro).then(res => ({ metro, instances: res?.data?.instances || [] })))
+      METROS.map(metro => fetchUnikraft<InstanceResponse>('/v1/instances', token, {}, metro).then(res => ({ metro, instances: res?.data?.instances || [] })))
     );
 
     results.forEach(result => {
       if (result.status === 'fulfilled') {
-        const mapped = result.value.instances.map((inst: any) => ({ ...inst, metro: result.value.metro }));
+        const mapped = result.value.instances.map((inst) => ({ ...inst, metro: result.value.metro }));
         instances.push(...mapped);
       }
     });
     await Promise.all(METROS.map(async (metro) => {
       try {
-        const result = await fetchUnikraft<any>('/v1/volumes', token, {}, metro);
+        const result = await fetchUnikraft<VolumeResponse>('/v1/volumes', token, {}, metro);
         const volumes = result?.data?.volumes || result?.volumes || [];
         volumesByMetro[metro] = volumes
-          .filter((volume: any) => volume?.name && volume?.state === 'available')
-          .map((volume: any) => ({ name: String(volume.name), state: volume.state }));
+          .filter((volume): volume is Volume & { name: string; state: 'available' } => typeof volume.name === 'string' && volume.state === 'available')
+          .map((volume) => ({ name: volume.name, state: volume.state }));
       } catch {
         volumesByMetro[metro] = [];
       }
     }));
-  } catch (err: any) {
-    return <div className="text-red-500 p-8">获取实例列表失败: {err.message}</div>;
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return <div className="text-red-500 p-8">获取实例列表失败: {message}</div>;
   }
 
   return (
@@ -72,7 +87,7 @@ export default async function InstancesPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {instances.map((instance: any) => (
+              {instances.map((instance) => (
                 <TableRow key={instance.uuid}>
                   <TableCell className="font-medium">{instance.name}</TableCell>
                   <TableCell className="uppercase">{instance.metro}</TableCell>

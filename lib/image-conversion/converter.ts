@@ -5,6 +5,39 @@ import { createJobLogger, updateJob } from './jobs';
 import { runCommand } from './command';
 
 const UNIKRAFT_CLI = process.env.UNIKRAFT_CLI || 'unikraft';
+const UNIKRAFT_RUNTIME = process.env.UNIKRAFT_RUNTIME || 'base-compat:latest';
+
+function buildArchitectures() {
+  const architectures = (process.env.UNIKRAFT_BUILD_ARCH || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const invalid = architectures.filter((value) => !['x86_64', 'arm64'].includes(value));
+  if (invalid.length) throw new Error(`UNIKRAFT_BUILD_ARCH 包含无效架构：${invalid.join(', ')}。`);
+  return Array.from(new Set(architectures));
+}
+
+function imageSummary(value: unknown): string {
+  const rows = Array.isArray(value) ? value : [value];
+  const summary = rows.flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+    const row = item as Record<string, unknown>;
+    const platform = row.platform && typeof row.platform === 'object'
+      ? row.platform as Record<string, unknown>
+      : {};
+    const kernel = row.kernel && typeof row.kernel === 'object'
+      ? row.kernel as Record<string, unknown>
+      : {};
+    const initrd = row.initrd && typeof row.initrd === 'object'
+      ? row.initrd as Record<string, unknown>
+      : {};
+    return [`platform=${String(platform.os || 'unknown')}/${String(platform.architecture || 'unknown')}`
+      + `${platform.variant ? `/${String(platform.variant)}` : ''}`
+      + ` kernel=${kernel.digest || kernel.size ? JSON.stringify(kernel) : 'missing'}`
+      + ` initrd=${initrd.digest || initrd.size ? JSON.stringify(initrd) : 'missing'}`];
+  });
+  return summary.length ? summary.join('\n') : '未解析到镜像平台信息。';
+}
 
 function shellQuote(value: string) { return `'${value.replace(/'/g, `'\\''`)}'`; }
 function details(error: unknown) {
@@ -29,19 +62,32 @@ export async function convertImage(jobId: string, token: string, image: string) 
     await updateJob(jobId, { status: 'inspecting' });
     logger.append('\n读取镜像配置...\n');
     const inspect = await runCommand('docker', ['image', 'inspect', image], { env, maxBuffer: 5 * 1024 * 1024, onOutput: logger.append });
-    const metadata = JSON.parse(inspect.stdout)[0]?.Config || {};
+    const inspectedImage = JSON.parse(inspect.stdout)[0] || {};
+    const metadata = inspectedImage.Config || {};
+    logger.append(`源镜像平台：${String(inspectedImage.Os || 'unknown')}/${String(inspectedImage.Architecture || 'unknown')}\n`);
     const command = [...(Array.isArray(metadata.Entrypoint) ? metadata.Entrypoint : []), ...(Array.isArray(metadata.Cmd) ? metadata.Cmd : [])].map(String);
     if (!command.length) throw new Error('Docker 镜像没有 Entrypoint 或 Cmd。');
     const workingDir = typeof metadata.WorkingDir === 'string' ? metadata.WorkingDir.trim() : '';
     const runtimeCommand = workingDir ? ['/bin/sh', '-c', `cd ${shellQuote(workingDir)} && exec ${command.map(shellQuote).join(' ')}`] : command;
     await fs.writeFile(path.join(dir, 'Dockerfile'), `FROM ${image}\n`);
-    await fs.writeFile(path.join(dir, 'Kraftfile'), ['spec: v0.7', '', 'runtime: base-compat:latest', '', 'rootfs:', '  source:', '    path: ./Dockerfile', '    type: dockerfile', '  format: erofs', '', `cmd: ${JSON.stringify(runtimeCommand)}`].join('\n'));
+    await fs.writeFile(path.join(dir, 'Kraftfile'), ['spec: v0.7', '', `runtime: ${UNIKRAFT_RUNTIME}`, '', 'rootfs:', '  source:', '    path: ./Dockerfile', '    type: dockerfile', '  format: erofs', '', `cmd: ${JSON.stringify(runtimeCommand)}`].join('\n'));
     const namespace = process.env.UNIKRAFT_IMAGE_NAMESPACE || 'dghdnk';
     const imageName = image.split('/').pop()?.replace(/[^a-zA-Z0-9_.-]/g, '-') || 'app';
     const outputImage = `${namespace}/converted-${imageName}-${jobId.slice(0, 8)}:latest`;
     await updateJob(jobId, { status: 'building', outputImage });
     logger.append('\n开始构建并上传镜像...\n');
-    await runCommand(UNIKRAFT_CLI, ['--config', configPath, 'build', dir, '--output', outputImage], { env, timeout: 30 * 60 * 1000, maxBuffer: 20 * 1024 * 1024, onOutput: logger.append });
+    const architectures = buildArchitectures();
+    logger.append(`构建 runtime=${UNIKRAFT_RUNTIME}; arch=${architectures.length ? architectures.join(',') : 'runtime 默认平台'}\n`);
+    const buildArgs = ['--config', configPath, 'build', dir];
+    architectures.forEach((arch) => buildArgs.push('--arch', arch));
+    buildArgs.push('--output', outputImage);
+    await runCommand(UNIKRAFT_CLI, buildArgs, { env, timeout: 30 * 60 * 1000, maxBuffer: 20 * 1024 * 1024, onOutput: logger.append });
+    try {
+      const inspect = await runCommand(UNIKRAFT_CLI, ['--config', configPath, 'image', 'get', outputImage, '--output', 'json'], { env, timeout: 120000, maxBuffer: 5 * 1024 * 1024 });
+      logger.append(`\n转换镜像平台摘要：\n${imageSummary(JSON.parse(inspect.stdout))}\n`);
+    } catch (error) {
+      logger.append(`\n无法读取转换镜像 manifest：${details(error)}\n`);
+    }
     await logger.flush();
     await updateJob(jobId, { status: 'completed', outputImage });
   } catch (error) {

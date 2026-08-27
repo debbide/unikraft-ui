@@ -21,7 +21,7 @@ export function DeployModal({
 }) {
   const [open, setOpen] = useState(false);
   const [metro, setMetro] = useState('sin');
-  const [state, formAction, pending] = useActionState(deployInstance, null as any);
+  const [state, formAction, pending] = useActionState(deployInstance, null);
   const availableVolumes = volumesByMetro[metro] || [];
 
   return (

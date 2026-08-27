@@ -42,7 +42,7 @@ export async function fetchUnikraft<T>(
       if (errorData && errorData.message) {
         errorMessage = errorData.message;
       }
-    } catch (e) {
+    } catch {
       // Ignore JSON parse error if response is not JSON
     }
     throw new Error(errorMessage);
