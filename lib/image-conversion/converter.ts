@@ -71,8 +71,8 @@ export async function convertImage(jobId: string, token: string, image: string, 
     const outputImage = `${namespace}/converted-${imageName}-${jobId.slice(0, 8)}:latest`;
     await updateJob(jobId, { status: 'building', outputImage });
     logger.append('\n开始构建并上传镜像...\n');
-    logger.append(`构建 runtime=${runtime}; arch=Kraftfile/runtime 默认平台\n`);
-    const buildArgs = ['--config', configPath, 'build', dir, '--output', outputImage];
+    logger.append(`构建 runtime=${runtime}; arch=Kraftfile/runtime 默认平台; cache=disabled\n`);
+    const buildArgs = ['--config', configPath, 'build', dir, '--no-cache', '--output', outputImage];
     await runCommand(UNIKRAFT_CLI, buildArgs, { env, timeout: 30 * 60 * 1000, maxBuffer: 20 * 1024 * 1024, onOutput: logger.append });
     try {
       const inspect = await runCommand(UNIKRAFT_CLI, ['--config', configPath, 'image', 'get', outputImage, '--output', 'json'], { env, timeout: 120000, maxBuffer: 5 * 1024 * 1024 });
