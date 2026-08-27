@@ -6,6 +6,7 @@ import type { ConversionJob, ConversionStatus } from './types';
 
 const storeDir = process.env.UNIKRAFT_DATA_DIR || path.join(os.tmpdir(), 'unikraft-ui');
 const storePath = path.join(storeDir, 'image-conversion-jobs.json');
+const maxLogLength = 100000;
 let operation = Promise.resolve();
 
 async function readJobs(): Promise<ConversionJob[]> {
@@ -51,7 +52,7 @@ export function updateJob(id: string, patch: Partial<Pick<ConversionJob, 'output
     const jobs = await readJobs();
     const job = jobs.find((item) => item.id === id);
     if (!job) return undefined;
-    if (patch.log !== undefined) patch.log = patch.log.slice(-20000);
+    if (patch.log !== undefined) patch.log = patch.log.slice(-maxLogLength);
     Object.assign(job, patch, { updatedAt: new Date().toISOString() });
     await writeJobs(jobs);
     return job;
@@ -70,7 +71,7 @@ export function createJobLogger(id: string, initial = '') {
   };
   return {
     append(chunk: string) {
-      log = `${log}${chunk}`.slice(-20000);
+      log = `${log}${chunk}`.slice(-maxLogLength);
       if (!timer) timer = setTimeout(() => { void persist(); }, 500);
     },
     async flush() {
