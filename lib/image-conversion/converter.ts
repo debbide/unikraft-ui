@@ -52,8 +52,8 @@ export async function convertImage(jobId: string, token: string, image: string, 
     await logger.flush();
     await runCommand(UNIKRAFT_CLI, ['--config', configPath, 'login', '--no-browser', '--token', tokenPath], { env, timeout: 120000, onOutput: logger.append });
     await updateJob(jobId, { status: 'pulling' });
-    logger.append(`\n拉取 Docker 镜像 ${image}...\n`);
-    await runCommand('docker', ['pull', image], { env, timeout: 30 * 60 * 1000, maxBuffer: 20 * 1024 * 1024, onOutput: logger.append });
+    logger.append(`\n拉取 Docker 镜像 ${image}，强制平台 linux/amd64...\n`);
+    await runCommand('docker', ['pull', '--platform', 'linux/amd64', image], { env, timeout: 30 * 60 * 1000, maxBuffer: 20 * 1024 * 1024, onOutput: logger.append });
     await updateJob(jobId, { status: 'inspecting' });
     logger.append('\n读取镜像配置...\n');
     const inspect = await runCommand('docker', ['image', 'inspect', image], { env, maxBuffer: 5 * 1024 * 1024, onOutput: logger.append });
@@ -64,7 +64,7 @@ export async function convertImage(jobId: string, token: string, image: string, 
     if (!command.length) throw new Error('Docker 镜像没有 Entrypoint 或 Cmd。');
     const workingDir = typeof metadata.WorkingDir === 'string' ? metadata.WorkingDir.trim() : '';
     const runtimeCommand = workingDir ? ['/bin/sh', '-c', `cd ${shellQuote(workingDir)} && exec ${command.map(shellQuote).join(' ')}`] : command;
-    await fs.writeFile(path.join(dir, 'Dockerfile'), `FROM ${image}\n`);
+    await fs.writeFile(path.join(dir, 'Dockerfile'), `FROM --platform=linux/amd64 ${image}\n`);
     await fs.writeFile(path.join(dir, 'Kraftfile'), ['spec: v0.7', '', `runtime: ${runtime}`, '', 'rootfs:', '  source:', '    path: ./Dockerfile', '    type: dockerfile', '  format: erofs', '', `cmd: ${JSON.stringify(runtimeCommand)}`].join('\n'));
     const namespace = process.env.UNIKRAFT_IMAGE_NAMESPACE || 'dghdnk';
     const imageName = image.split('/').pop()?.replace(/[^a-zA-Z0-9_.-]/g, '-') || 'app';
