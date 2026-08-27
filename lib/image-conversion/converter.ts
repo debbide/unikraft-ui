@@ -8,7 +8,7 @@ const UNIKRAFT_CLI = process.env.UNIKRAFT_CLI || 'unikraft';
 const DEFAULT_RUNTIME = process.env.UNIKRAFT_RUNTIME || 'base-compat:latest';
 export const SUPPORTED_RUNTIMES = [
   'base-compat:latest',
-  'ghcr.io/cokear/base-compat-fix:latest',
+  'ghcr.io/cokear/base-compat-fix:v3',
 ] as const;
 
 function imageSummary(value: unknown): string {
