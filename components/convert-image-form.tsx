@@ -18,8 +18,7 @@ export function ConvertImageForm() {
         <SelectTrigger id="runtime" className="w-52"><SelectValue /></SelectTrigger>
         <SelectContent>
           <SelectItem value="base-compat:latest">普通版 runtime</SelectItem>
-          <SelectItem value="ghcr.io/cokear/base-compat-debug:latest">Debug 版（排障）</SelectItem>
-          <SelectItem value="ghcr.io/cokear/base-compat-strace:latest">Strace 版（系统调用追踪）</SelectItem>
+          <SelectItem value="ghcr.io/cokear/base-compat-fix:latest">修复版 runtime</SelectItem>
         </SelectContent>
       </Select>
       <Button type="submit" disabled={pending}>
