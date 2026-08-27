@@ -49,8 +49,8 @@ export async function diagnoseInstance(uuid: string, metro: string, name: string
     await fs.writeFile(tokenPath, token, { mode: 0o600 });
     await execFileAsync('unikraft', ['--config', configPath, 'login', '--no-browser', '--token', tokenPath], { env, timeout: 120000 });
     const run = (args: string[], maxBuffer: number) => execFileAsync('unikraft', ['--config', configPath, ...args], { env, timeout: 120000, maxBuffer });
-    const detailsResult = await run(['instances', 'get', uuid, '--metro', metro], 5 * 1024 * 1024).catch((error) => ({ error: commandOutput(error) }));
-    const logsResult = await run(['instances', 'logs', name, '--metro', metro], 10 * 1024 * 1024).catch((error) => ({ error: commandOutput(error) }));
+    const detailsResult = await run(['instances', 'get', uuid], 5 * 1024 * 1024).catch((error) => ({ error: commandOutput(error) }));
+    const logsResult = await run(['instances', 'logs', name], 10 * 1024 * 1024).catch((error) => ({ error: commandOutput(error) }));
     return {
       details: 'stdout' in detailsResult ? `${detailsResult.stdout}${detailsResult.stderr || ''}`.trim() : '',
       logs: 'stdout' in logsResult ? `${logsResult.stdout}${logsResult.stderr || ''}`.trim() : '',
