@@ -46,13 +46,36 @@ export function createJob(sourceImage: string) {
   });
 }
 
-export function updateJob(id: string, patch: Partial<Pick<ConversionJob, 'outputImage' | 'error'>> & { status?: ConversionStatus }) {
+export function updateJob(id: string, patch: Partial<Pick<ConversionJob, 'outputImage' | 'error' | 'log'>> & { status?: ConversionStatus }) {
   return serialized(async () => {
     const jobs = await readJobs();
     const job = jobs.find((item) => item.id === id);
     if (!job) return undefined;
+    if (patch.log !== undefined) patch.log = patch.log.slice(-20000);
     Object.assign(job, patch, { updatedAt: new Date().toISOString() });
     await writeJobs(jobs);
     return job;
   });
+}
+
+export function createJobLogger(id: string, initial = '') {
+  let log = initial;
+  let timer: NodeJS.Timeout | undefined;
+  let pending = Promise.resolve();
+  const persist = () => {
+    timer = undefined;
+    const snapshot = log;
+    pending = pending.then(() => updateJob(id, { log: snapshot })).then(() => undefined);
+    return pending;
+  };
+  return {
+    append(chunk: string) {
+      log = `${log}${chunk}`.slice(-20000);
+      if (!timer) timer = setTimeout(() => { void persist(); }, 500);
+    },
+    async flush() {
+      if (timer) { clearTimeout(timer); timer = undefined; }
+      await persist();
+    },
+  };
 }

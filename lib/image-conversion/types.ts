@@ -6,6 +6,7 @@ export type ConversionJob = {
   outputImage?: string;
   status: ConversionStatus;
   error?: string;
+  log?: string;
   createdAt: string;
   updatedAt: string;
 };

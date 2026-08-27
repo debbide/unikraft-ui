@@ -69,7 +69,7 @@ export function ConversionJobs({ initialJobs, sourcePrefix }: { initialJobs: Con
     <Table><TableHeader><TableRow><TableHead>源镜像</TableHead><TableHead>状态</TableHead><TableHead>输出镜像</TableHead><TableHead>更新时间</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader><TableBody>
       {jobs.map((job) => <TableRow key={job.id}>
         <TableCell className="font-mono text-xs">{job.sourceImage}</TableCell>
-        <TableCell><span className={job.status === 'failed' ? 'text-red-600' : job.status === 'completed' ? 'text-green-600' : ''}>{labels[job.status]}</span>{job.error && <p className="mt-1 max-w-md whitespace-pre-wrap text-xs text-red-600">{job.error}</p>}</TableCell>
+        <TableCell><span className={job.status === 'failed' ? 'text-red-600' : job.status === 'completed' ? 'text-green-600' : ''}>{labels[job.status]}</span>{job.error && <p className="mt-1 max-w-md whitespace-pre-wrap text-xs text-red-600">{job.error}</p>}{job.log && <details className="mt-2 max-w-xl"><summary className="cursor-pointer text-xs text-muted-foreground">查看构建日志</summary><pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-muted p-2 text-[11px]">{job.log}</pre></details>}</TableCell>
         <TableCell className="font-mono text-xs">{job.outputImage || '-'}</TableCell>
         <TableCell className="text-xs text-muted-foreground">{new Date(job.updatedAt).toLocaleString('zh-CN')}</TableCell>
         <TableCell className="text-right">{job.status === 'failed' && <Button size="sm" variant="outline" disabled={pending} onClick={() => retry(job.id)}><RefreshCw />重试</Button>}</TableCell>

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getToken } from '@/app/actions/auth';
 import { listJobs } from '@/lib/image-conversion/jobs';
+import { recoverJobs } from '@/lib/image-conversion/worker';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,6 +14,7 @@ export async function GET() {
   }
 
   try {
+    await recoverJobs();
     return NextResponse.json(
       { jobs: await listJobs() },
       { headers: { 'Cache-Control': 'no-store' } },

@@ -1,11 +1,9 @@
-import { execFile } from 'child_process';
-import { promisify } from 'util';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { updateJob } from './jobs';
+import { createJobLogger, updateJob } from './jobs';
+import { runCommand } from './command';
 
-const execFileAsync = promisify(execFile);
 const UNIKRAFT_CLI = process.env.UNIKRAFT_CLI || 'unikraft';
 
 function shellQuote(value: string) { return `'${value.replace(/'/g, `'\\''`)}'`; }
@@ -20,13 +18,17 @@ export async function convertImage(jobId: string, token: string, image: string) 
   const tokenPath = path.join(loginDir, 'token');
   const configPath = path.join(loginDir, 'config');
   const env = { ...process.env, KRAFTCLOUD_TOKEN: token };
+  const logger = createJobLogger(jobId, '登录 Unikraft Cloud...\n');
   try {
     await fs.writeFile(tokenPath, token, { mode: 0o600 });
-    await execFileAsync(UNIKRAFT_CLI, ['--config', configPath, 'login', '--no-browser', '--token', tokenPath], { env, timeout: 120000 });
+    await logger.flush();
+    await runCommand(UNIKRAFT_CLI, ['--config', configPath, 'login', '--no-browser', '--token', tokenPath], { env, timeout: 120000, onOutput: logger.append });
     await updateJob(jobId, { status: 'pulling' });
-    await execFileAsync('docker', ['pull', image], { env, timeout: 30 * 60 * 1000, maxBuffer: 20 * 1024 * 1024 });
+    logger.append(`\n拉取 Docker 镜像 ${image}...\n`);
+    await runCommand('docker', ['pull', image], { env, timeout: 30 * 60 * 1000, maxBuffer: 20 * 1024 * 1024, onOutput: logger.append });
     await updateJob(jobId, { status: 'inspecting' });
-    const inspect = await execFileAsync('docker', ['image', 'inspect', image], { env, maxBuffer: 5 * 1024 * 1024 });
+    logger.append('\n读取镜像配置...\n');
+    const inspect = await runCommand('docker', ['image', 'inspect', image], { env, maxBuffer: 5 * 1024 * 1024, onOutput: logger.append });
     const metadata = JSON.parse(inspect.stdout)[0]?.Config || {};
     const command = [...(Array.isArray(metadata.Entrypoint) ? metadata.Entrypoint : []), ...(Array.isArray(metadata.Cmd) ? metadata.Cmd : [])].map(String);
     if (!command.length) throw new Error('Docker 镜像没有 Entrypoint 或 Cmd。');
@@ -38,9 +40,12 @@ export async function convertImage(jobId: string, token: string, image: string) 
     const imageName = image.split('/').pop()?.replace(/[^a-zA-Z0-9_.-]/g, '-') || 'app';
     const outputImage = `${namespace}/converted-${imageName}-${jobId.slice(0, 8)}:latest`;
     await updateJob(jobId, { status: 'building', outputImage });
-    await execFileAsync(UNIKRAFT_CLI, ['--config', configPath, 'build', dir, '--output', outputImage], { env, timeout: 30 * 60 * 1000, maxBuffer: 20 * 1024 * 1024 });
+    logger.append('\n开始构建并上传镜像...\n');
+    await runCommand(UNIKRAFT_CLI, ['--config', configPath, 'build', dir, '--output', outputImage], { env, timeout: 30 * 60 * 1000, maxBuffer: 20 * 1024 * 1024, onOutput: logger.append });
+    await logger.flush();
     await updateJob(jobId, { status: 'completed', outputImage });
   } catch (error) {
+    await logger.flush();
     await updateJob(jobId, { status: 'failed', error: details(error) });
   } finally {
     await Promise.all([
