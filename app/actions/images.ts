@@ -212,11 +212,8 @@ async function enrichImageSizes(
   configPath: string,
   env: NodeJS.ProcessEnv,
 ): Promise<TemporaryImage[]> {
-  return Promise.all(
+  const enriched = await Promise.all(
     images.map(async (image) => {
-      if (image.size !== "-" && image.createdAt !== "-" && image.digest)
-        return image;
-
       const taggedReferences = image.tags.map(
         (tag) => `${image.reference}:${tag}`,
       );
@@ -249,14 +246,16 @@ async function enrichImageSizes(
               .filter((item): item is TemporaryImage => item !== null),
           ).find((item) => item.reference === image.reference);
           if (details) return mergeImage(image, details);
-        } catch {
-          // Try the next accepted CLI reference form.
+        } catch (error) {
+          if (!/references? not found/i.test(commandDetails(error, "")))
+            return image;
         }
       }
 
-      return image;
+      return null;
     }),
   );
+  return enriched.filter((image): image is TemporaryImage => image !== null);
 }
 
 async function listImageDetailsFromApi(
