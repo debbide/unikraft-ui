@@ -6,7 +6,11 @@ import { runCommand } from './command';
 
 const UNIKRAFT_CLI = process.env.UNIKRAFT_CLI || 'unikraft';
 const DEFAULT_RUNTIME = process.env.UNIKRAFT_RUNTIME || 'base-compat:latest';
-export const SUPPORTED_RUNTIMES = ['base-compat:latest', 'base-compat:latest-dbg'] as const;
+export const SUPPORTED_RUNTIMES = [
+  'base-compat:latest',
+  'ghcr.io/cokear/base-compat-debug:latest',
+  'ghcr.io/cokear/base-compat-strace:latest',
+] as const;
 
 function imageSummary(value: unknown): string {
   const rows = Array.isArray(value) ? value : [value];
