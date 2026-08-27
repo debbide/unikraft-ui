@@ -90,6 +90,31 @@ function strings(value: unknown): string[] {
   const result = text(value).trim();
   return result ? [result] : [];
 }
+function sizeInBytes(value: unknown): number {
+  const match = text(value)
+    .trim()
+    .match(/^([0-9]+(?:\.[0-9]+)?)\s*(B|KiB|MiB|GiB|TiB)?$/i);
+  if (!match) return 0;
+  const amount = Number(match[1]);
+  const unit = (match[2] || "B").toLowerCase();
+  const exponent = { b: 0, kib: 1, mib: 2, gib: 3, tib: 4 }[unit] ?? 0;
+  return amount * 1024 ** exponent;
+}
+function imageSize(row: Record<string, unknown>): string {
+  const directSize = row.size_in_bytes || row.size_bytes || row.bytes;
+  if (directSize !== undefined && directSize !== null)
+    return text(directSize) || "-";
+  const components = [row.initrd, row.kernel]
+    .map((component) =>
+      component && typeof component === "object"
+        ? sizeInBytes((component as Record<string, unknown>).size)
+        : 0,
+    )
+    .filter((size) => size > 0);
+  if (components.length)
+    return String(Math.round(components.reduce((total, size) => total + size, 0)));
+  return text(row.size) || "-";
+}
 function isMetroIndexReference(reference: string) {
   return /^index\.[a-z0-9-]+\.unikraft\.cloud\//i.test(
     reference.replace(/^oci:\/\//, "").trim(),
@@ -154,15 +179,17 @@ function normalize(
   return {
     reference,
     metro,
-    size:
-      text(row.size_in_bytes || row.size_bytes || row.size || row.bytes) || "-",
+    size: imageSize(row),
     createdAt:
       text(
         row.created_at ||
           row.createdAt ||
           row.created ||
           row.pushed_at ||
-          row.pushedAt,
+          row.pushedAt ||
+          (row.metadata && typeof row.metadata === "object"
+            ? (row.metadata as Record<string, unknown>).created
+            : ""),
       ) || "-",
     digest,
     tags: tags.length ? Array.from(new Set(tags)) : ["latest"],
