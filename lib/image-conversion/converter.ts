@@ -39,6 +39,69 @@ function details(error: unknown) {
   return [item.message, item.stderr].filter(Boolean).join('\n').trim() || '镜像转换失败。';
 }
 
+type OciManifest = {
+  digest?: unknown;
+  platform?: {
+    os?: unknown;
+    architecture?: unknown;
+    variant?: unknown;
+  };
+};
+
+type DockerManifestVerbose = {
+  Descriptor?: OciManifest;
+  descriptor?: OciManifest;
+  digest?: unknown;
+  platform?: OciManifest['platform'];
+};
+
+function isAmd64Platform(platform: OciManifest['platform']) {
+  return platform?.os === 'linux' && platform?.architecture === 'amd64';
+}
+
+function findAmd64Digest(value: unknown) {
+  const rows = Array.isArray(value) ? value : [value];
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') continue;
+    const item = row as DockerManifestVerbose;
+    const descriptor = item.Descriptor || item.descriptor || item;
+    const platform = descriptor.platform || item.platform;
+    const digest = descriptor.digest || item.digest;
+    if (isAmd64Platform(platform) && typeof digest === 'string' && /^sha256:[a-f0-9]{64}$/i.test(digest)) {
+      return digest;
+    }
+  }
+  return undefined;
+}
+
+async function resolveAmd64Image(image: string, env: NodeJS.ProcessEnv, onOutput?: (chunk: string) => void) {
+  let digest: string | undefined;
+  try {
+    const result = await runCommand(
+      'docker',
+      ['manifest', 'inspect', '--verbose', image],
+      { env, timeout: 120000, maxBuffer: 10 * 1024 * 1024 },
+    );
+    digest = findAmd64Digest(JSON.parse(result.stdout));
+  } catch (error) {
+    // Older Docker installations or private registries may not support this command.
+    // The buildx raw index is retained as a compatible fallback.
+    onOutput?.(`\n普通 manifest 查询失败，改用 buildx：${details(error)}\n`);
+  }
+  if (!digest) {
+    const result = await runCommand(
+      'docker',
+      ['buildx', 'imagetools', 'inspect', image, '--raw'],
+      { env, timeout: 120000, maxBuffer: 10 * 1024 * 1024 },
+    );
+    digest = findAmd64Digest(JSON.parse(result.stdout));
+  }
+  if (!digest) {
+    throw new Error(`镜像 ${image} 没有可用的 linux/amd64 manifest。`);
+  }
+  return `${image.split('@', 1)[0]}@${digest.toLowerCase()}`;
+}
+
 export async function convertImage(jobId: string, token: string, image: string, runtime = DEFAULT_RUNTIME) {
   if (!SUPPORTED_RUNTIMES.includes(runtime as (typeof SUPPORTED_RUNTIMES)[number])) throw new Error('不支持的 runtime。');
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'unikraft-convert-'));
@@ -52,19 +115,24 @@ export async function convertImage(jobId: string, token: string, image: string, 
     await logger.flush();
     await runCommand(UNIKRAFT_CLI, ['--config', configPath, 'login', '--no-browser', '--token', tokenPath], { env, timeout: 120000, onOutput: logger.append });
     await updateJob(jobId, { status: 'pulling' });
-    logger.append(`\n拉取 Docker 镜像 ${image}，强制平台 linux/amd64...\n`);
-    await runCommand('docker', ['pull', '--platform', 'linux/amd64', image], { env, timeout: 30 * 60 * 1000, maxBuffer: 20 * 1024 * 1024, onOutput: logger.append });
+    logger.append(`\n查询 Docker 镜像 ${image} 的 linux/amd64 manifest...\n`);
+    const resolvedImage = await resolveAmd64Image(image, env, logger.append);
+    logger.append(`已锁定 AMD64 镜像：${resolvedImage}\n`);
+    await runCommand('docker', ['pull', '--platform', 'linux/amd64', resolvedImage], { env, timeout: 30 * 60 * 1000, maxBuffer: 20 * 1024 * 1024, onOutput: logger.append });
     await updateJob(jobId, { status: 'inspecting' });
     logger.append('\n读取镜像配置...\n');
-    const inspect = await runCommand('docker', ['image', 'inspect', image], { env, maxBuffer: 5 * 1024 * 1024, onOutput: logger.append });
+    const inspect = await runCommand('docker', ['image', 'inspect', resolvedImage], { env, maxBuffer: 5 * 1024 * 1024, onOutput: logger.append });
     const inspectedImage = JSON.parse(inspect.stdout)[0] || {};
     const metadata = inspectedImage.Config || {};
     logger.append(`源镜像平台：${String(inspectedImage.Os || 'unknown')}/${String(inspectedImage.Architecture || 'unknown')}\n`);
+    if (inspectedImage.Os !== 'linux' || inspectedImage.Architecture !== 'amd64') {
+      throw new Error(`解析后的源镜像平台不是 linux/amd64，而是 ${String(inspectedImage.Os || 'unknown')}/${String(inspectedImage.Architecture || 'unknown')}。`);
+    }
     const command = [...(Array.isArray(metadata.Entrypoint) ? metadata.Entrypoint : []), ...(Array.isArray(metadata.Cmd) ? metadata.Cmd : [])].map(String);
     if (!command.length) throw new Error('Docker 镜像没有 Entrypoint 或 Cmd。');
     const workingDir = typeof metadata.WorkingDir === 'string' ? metadata.WorkingDir.trim() : '';
     const runtimeCommand = workingDir ? ['/bin/sh', '-c', `cd ${shellQuote(workingDir)} && exec ${command.map(shellQuote).join(' ')}`] : command;
-    await fs.writeFile(path.join(dir, 'Dockerfile'), `FROM --platform=linux/amd64 ${image}\n`);
+    await fs.writeFile(path.join(dir, 'Dockerfile'), `FROM ${resolvedImage}\n`);
     await fs.writeFile(path.join(dir, 'Kraftfile'), ['spec: v0.7', '', `runtime: ${runtime}`, '', 'rootfs:', '  source:', '    path: ./Dockerfile', '    type: dockerfile', '  format: erofs', '', `cmd: ${JSON.stringify(runtimeCommand)}`].join('\n'));
     const namespace = process.env.UNIKRAFT_IMAGE_NAMESPACE || 'dghdnk';
     const imageName = image.split('/').pop()?.replace(/[^a-zA-Z0-9_.-]/g, '-') || 'app';

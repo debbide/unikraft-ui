@@ -1,3 +1,23 @@
+# Unikraft UI
+
+## 镜像转换前解析 AMD64 镜像
+
+转换任务会在拉取前查询镜像 manifest，锁定 `linux/amd64` 对应的具体 digest，随后使用
+`docker pull --platform linux/amd64 image@sha256:...` 拉取，并且 Dockerfile 也引用这个
+digest，避免宿主机默认平台或多架构 tag 再次选错镜像。
+
+也可以在部署机上单独查询某个镜像的 AMD64 编号：
+
+```bash
+npm run resolve:amd64 -- nginx:latest
+# platform=linux/amd64
+# digest=sha256:...
+# image=nginx@sha256:...
+```
+
+该脚本优先使用 `docker manifest inspect --verbose`，不支持时自动回退到
+`docker buildx imagetools inspect --raw`。执行前请确认 Docker daemon 可访问，并且已对
+私有 registry 完成 `docker login`。
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started
@@ -42,10 +62,10 @@ environment:
 
 This works when the UI container runs on an ARM64 host. A normal `docker pull` and
 `docker image inspect` only show the host-selected child image, but the generated
-Dockerfile keeps the original tag and the conversion build resolves its amd64 and
-arm64 variants for the corresponding Unikraft targets. The source tag must publish
-both `linux/amd64` and `linux/arm64` manifests. Override the variable with
-`x86_64` or `arm64` when converting a single-platform source image.
+Dockerfile uses the resolved `linux/amd64` digest as its source. The
+source tag must publish a `linux/amd64` manifest. Override the variable with
+`x86_64` or `arm64` only when selecting the output Unikraft target; it does not
+change the source-image lookup, which is intentionally fixed to AMD64.
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
