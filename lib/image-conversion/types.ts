@@ -3,6 +3,7 @@ export type ConversionStatus = 'queued' | 'pulling' | 'inspecting' | 'building' 
 export type ConversionJob = {
   id: string;
   sourceImage: string;
+  runtime?: string;
   outputImage?: string;
   status: ConversionStatus;
   error?: string;

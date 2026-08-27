@@ -5,10 +5,12 @@ import { createJobLogger, updateJob } from './jobs';
 import { runCommand } from './command';
 
 const UNIKRAFT_CLI = process.env.UNIKRAFT_CLI || 'unikraft';
-const UNIKRAFT_RUNTIME = process.env.UNIKRAFT_RUNTIME || 'base-compat:latest';
+const DEFAULT_RUNTIME = process.env.UNIKRAFT_RUNTIME || 'base-compat:latest';
+export const SUPPORTED_RUNTIMES = ['base-compat:latest', 'base-compat:latest-dbg'] as const;
 
 function buildArchitectures() {
-  const architectures = (process.env.UNIKRAFT_BUILD_ARCH || '')
+  const configuredArchitectures = process.env.UNIKRAFT_BUILD_ARCH || 'x86_64,arm64';
+  const architectures = configuredArchitectures
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean);
@@ -45,7 +47,8 @@ function details(error: unknown) {
   return [item.message, item.stderr].filter(Boolean).join('\n').trim() || '镜像转换失败。';
 }
 
-export async function convertImage(jobId: string, token: string, image: string) {
+export async function convertImage(jobId: string, token: string, image: string, runtime = DEFAULT_RUNTIME) {
+  if (!SUPPORTED_RUNTIMES.includes(runtime as (typeof SUPPORTED_RUNTIMES)[number])) throw new Error('不支持的 runtime。');
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'unikraft-convert-'));
   const loginDir = await fs.mkdtemp(path.join(os.tmpdir(), 'unikraft-login-'));
   const tokenPath = path.join(loginDir, 'token');
@@ -70,14 +73,14 @@ export async function convertImage(jobId: string, token: string, image: string) 
     const workingDir = typeof metadata.WorkingDir === 'string' ? metadata.WorkingDir.trim() : '';
     const runtimeCommand = workingDir ? ['/bin/sh', '-c', `cd ${shellQuote(workingDir)} && exec ${command.map(shellQuote).join(' ')}`] : command;
     await fs.writeFile(path.join(dir, 'Dockerfile'), `FROM ${image}\n`);
-    await fs.writeFile(path.join(dir, 'Kraftfile'), ['spec: v0.7', '', `runtime: ${UNIKRAFT_RUNTIME}`, '', 'rootfs:', '  source:', '    path: ./Dockerfile', '    type: dockerfile', '  format: erofs', '', `cmd: ${JSON.stringify(runtimeCommand)}`].join('\n'));
+    await fs.writeFile(path.join(dir, 'Kraftfile'), ['spec: v0.7', '', `runtime: ${runtime}`, '', 'rootfs:', '  source:', '    path: ./Dockerfile', '    type: dockerfile', '  format: erofs', '', `cmd: ${JSON.stringify(runtimeCommand)}`].join('\n'));
     const namespace = process.env.UNIKRAFT_IMAGE_NAMESPACE || 'dghdnk';
     const imageName = image.split('/').pop()?.replace(/[^a-zA-Z0-9_.-]/g, '-') || 'app';
     const outputImage = `${namespace}/converted-${imageName}-${jobId.slice(0, 8)}:latest`;
     await updateJob(jobId, { status: 'building', outputImage });
     logger.append('\n开始构建并上传镜像...\n');
     const architectures = buildArchitectures();
-    logger.append(`构建 runtime=${UNIKRAFT_RUNTIME}; arch=${architectures.length ? architectures.join(',') : 'runtime 默认平台'}\n`);
+    logger.append(`构建 runtime=${runtime}; arch=${architectures.length ? architectures.join(',') : 'runtime 默认平台'}\n`);
     const buildArgs = ['--config', configPath, 'build', dir];
     architectures.forEach((arch) => buildArgs.push('--arch', arch));
     buildArgs.push('--output', outputImage);

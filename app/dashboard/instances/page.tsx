@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DeployModal } from '@/components/deploy-modal';
 import { DeleteInstanceButton } from '@/components/delete-instance-button';
 import { listTemporaryImages } from '@/app/actions/images';
+import { InstanceDiagnostics } from '@/components/instance-diagnostics';
 
 type Instance = {
   uuid: string;
@@ -106,7 +107,10 @@ export default async function InstancesPage() {
                     ) : '-'}
                   </TableCell>
                   <TableCell className="text-right">
-                    <DeleteInstanceButton uuid={instance.uuid} metro={instance.metro} name={instance.name} />
+                    <div className="flex justify-end gap-2">
+                      <InstanceDiagnostics uuid={instance.uuid} metro={instance.metro} name={instance.name} />
+                      <DeleteInstanceButton uuid={instance.uuid} metro={instance.metro} name={instance.name} />
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

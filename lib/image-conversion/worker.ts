@@ -4,11 +4,11 @@ import { buildExample } from './example-builder';
 let running = false;
 let recovered = false;
 
-export function enqueueConversion(jobId: string, token: string, image: string) {
+export function enqueueConversion(jobId: string, token: string, image: string, runtime?: string) {
   if (running) return;
   running = true;
   void (async () => {
-    try { await convertImage(jobId, token, image); }
+    try { await convertImage(jobId, token, image, runtime); }
     finally { running = false; void processNext(token); }
   })();
 }
@@ -19,16 +19,16 @@ export function enqueueExample(jobId: string, token: string, templateId: string)
   void (async () => { try { await buildExample(jobId, token, templateId); } finally { running = false; void processNext(token); } })();
 }
 
-export function enqueueJob(jobId: string, token: string, sourceImage: string) {
+export function enqueueJob(jobId: string, token: string, sourceImage: string, runtime?: string) {
   if (sourceImage.startsWith('example:')) enqueueExample(jobId, token, sourceImage.slice('example:'.length));
-  else enqueueConversion(jobId, token, sourceImage);
+  else enqueueConversion(jobId, token, sourceImage, runtime);
 }
 
 async function processNext(token: string) {
   const jobs = await listJobs();
   const next = jobs.find((job) => job.status === 'queued');
   if (!next) return;
-  enqueueJob(next.id, token, next.sourceImage);
+  enqueueJob(next.id, token, next.sourceImage, next.runtime);
 }
 
 export async function recoverJobs() {

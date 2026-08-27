@@ -31,6 +31,22 @@ After replacing an image, recreate the container and refresh any browser tabs th
 were opened against the previous deployment; old tabs can contain obsolete Action
 IDs and report `Failed to find Server Action` once.
 
+### Image conversion architectures
+
+Docker image conversion builds both Unikraft Cloud architectures by default:
+
+```yaml
+environment:
+  UNIKRAFT_BUILD_ARCH: "x86_64,arm64"
+```
+
+This works when the UI container runs on an ARM64 host. A normal `docker pull` and
+`docker image inspect` only show the host-selected child image, but the generated
+Dockerfile keeps the original tag and the conversion build resolves its amd64 and
+arm64 variants for the corresponding Unikraft targets. The source tag must publish
+both `linux/amd64` and `linux/arm64` manifests. Override the variable with
+`x86_64` or `arm64` when converting a single-platform source image.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

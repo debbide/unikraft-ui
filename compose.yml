@@ -7,6 +7,9 @@ services:
     environment:
       NODE_ENV: production
       KRAFTKIT_NO_WARN_CLOUD_DEPRECATION: "1"
+      # Convert multi-platform Docker tags into both Unikraft Cloud targets,
+      # regardless of the architecture of this worker host.
+      UNIKRAFT_BUILD_ARCH: "x86_64,arm64"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - unikraft-ui-data:/app/data

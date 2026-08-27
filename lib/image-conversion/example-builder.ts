@@ -7,7 +7,7 @@ import { runCommand } from './command';
 
 const cli = process.env.UNIKRAFT_CLI || 'unikraft';
 function buildArchitectures() {
-  const architectures = (process.env.UNIKRAFT_BUILD_ARCH || '').split(',').map((value) => value.trim()).filter(Boolean);
+  const architectures = (process.env.UNIKRAFT_BUILD_ARCH || 'x86_64,arm64').split(',').map((value) => value.trim()).filter(Boolean);
   const invalid = architectures.filter((value) => !['x86_64', 'arm64'].includes(value));
   if (invalid.length) throw new Error(`UNIKRAFT_BUILD_ARCH 包含无效架构：${invalid.join(', ')}。`);
   return Array.from(new Set(architectures));

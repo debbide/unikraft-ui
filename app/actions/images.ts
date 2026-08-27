@@ -19,6 +19,7 @@ import {
 } from "@/lib/image-conversion/worker";
 import type { ConversionJob } from "@/lib/image-conversion/types";
 import { fetchUnikraft, METROS } from "@/lib/unikraft/client";
+import { SUPPORTED_RUNTIMES } from "@/lib/image-conversion/converter";
 
 const execFileAsync = promisify(execFile);
 const UNIKRAFT_CLI = process.env.UNIKRAFT_CLI || "unikraft";
@@ -369,17 +370,19 @@ export async function convertDockerImage(
   const token = await getToken();
   if (!token) return { error: "Unauthorized" };
   const image = String(formData.get("image") || "").trim();
+  const runtime = String(formData.get("runtime") || "base-compat:latest").trim();
   if (
     !image ||
     /[\r\n]/.test(image) ||
     !/^[a-zA-Z0-9][a-zA-Z0-9._:@/-]*$/.test(image)
   )
     return { error: "请输入有效的 Docker 镜像引用。" };
+  if (!(SUPPORTED_RUNTIMES as readonly string[]).includes(runtime)) return { error: "请选择有效的 runtime。" };
   await recoverJobs();
-  if (await findActiveJob(image))
+  if (await findActiveJob(image, runtime))
     return { error: "该镜像已有转换任务在队列中，请等待任务完成。" };
-  const job = await createJob(image);
-  enqueueConversion(job.id, token, image);
+  const job = await createJob(image, runtime);
+  enqueueConversion(job.id, token, image, runtime);
   revalidatePath("/dashboard/images");
   return { success: true, job };
 }
@@ -404,8 +407,8 @@ export async function retryConversionJob(
   const job = (await listJobs()).find((item) => item.id === id);
   if (!job || job.status !== "failed")
     return { error: "只能重试失败的转换任务。" };
-  const replacement = await createJob(job.sourceImage);
-  enqueueJob(replacement.id, token, replacement.sourceImage);
+  const replacement = await createJob(job.sourceImage, job.runtime);
+  enqueueJob(replacement.id, token, replacement.sourceImage, replacement.runtime);
   revalidatePath("/dashboard/images");
   return { success: true };
 }

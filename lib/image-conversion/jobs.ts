@@ -32,15 +32,15 @@ function serialized<T>(action: () => Promise<T>): Promise<T> {
 
 export function listJobs() { return serialized(readJobs); }
 
-export function findActiveJob(sourceImage: string) {
-  return serialized(async () => (await readJobs()).find((job) => job.sourceImage === sourceImage && ['queued', 'pulling', 'inspecting', 'building'].includes(job.status)));
+export function findActiveJob(sourceImage: string, runtime?: string) {
+  return serialized(async () => (await readJobs()).find((job) => job.sourceImage === sourceImage && (job.runtime || 'base-compat:latest') === (runtime || 'base-compat:latest') && ['queued', 'pulling', 'inspecting', 'building'].includes(job.status)));
 }
 
-export function createJob(sourceImage: string) {
+export function createJob(sourceImage: string, runtime?: string) {
   return serialized(async () => {
     const jobs = await readJobs();
     const now = new Date().toISOString();
-    const job: ConversionJob = { id: randomUUID(), sourceImage, status: 'queued', createdAt: now, updatedAt: now };
+    const job: ConversionJob = { id: randomUUID(), sourceImage, runtime, status: 'queued', createdAt: now, updatedAt: now };
     await writeJobs([job, ...jobs].slice(0, 100));
     return job;
   });

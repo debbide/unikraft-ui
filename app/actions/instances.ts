@@ -31,6 +31,39 @@ function commandDetails(error: unknown) {
   ].filter(Boolean).join('\n').trim();
 }
 
+function commandOutput(error: unknown) {
+  const item = error as { stdout?: string; stderr?: string; message?: string };
+  return [item.stdout, item.stderr, item.message].filter(Boolean).join('\n').trim();
+}
+
+export async function diagnoseInstance(uuid: string, metro: string, name: string) {
+  const token = await getToken();
+  if (!token) return { error: 'Unauthorized' };
+  if (!/^[a-z]{3}$/.test(metro) || !uuid || !name) return { error: '实例参数无效。' };
+
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'unikraft-diagnose-'));
+  const tokenPath = path.join(dir, 'token');
+  const configPath = path.join(dir, 'config');
+  const env = { ...process.env, KRAFTCLOUD_TOKEN: token };
+  try {
+    await fs.writeFile(tokenPath, token, { mode: 0o600 });
+    await execFileAsync('unikraft', ['--config', configPath, 'login', '--no-browser', '--token', tokenPath], { env, timeout: 120000 });
+    const run = (args: string[], maxBuffer: number) => execFileAsync('unikraft', ['--config', configPath, ...args], { env, timeout: 120000, maxBuffer });
+    const detailsResult = await run(['cloud', 'instance', 'get', uuid, '--metro', metro], 5 * 1024 * 1024).catch((error) => ({ error: commandOutput(error) }));
+    const logsResult = await run(['cloud', 'instance', 'logs', name, '--metro', metro], 10 * 1024 * 1024).catch((error) => ({ error: commandOutput(error) }));
+    return {
+      details: 'stdout' in detailsResult ? `${detailsResult.stdout}${detailsResult.stderr || ''}`.trim() : '',
+      logs: 'stdout' in logsResult ? `${logsResult.stdout}${logsResult.stderr || ''}`.trim() : '',
+      detailsError: 'error' in detailsResult ? detailsResult.error : '',
+      logsError: 'error' in logsResult ? logsResult.error : '',
+    };
+  } catch (error) {
+    return { error: `获取诊断信息失败: ${commandDetails(error)}` };
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+}
+
 async function runConvertedImage(
   image: string,
   token: string,
