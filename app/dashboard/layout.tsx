@@ -4,10 +4,12 @@ import { Server, HardDrive, LayoutDashboard, LogOut, PackageOpen, Boxes } from '
 import { logout } from '@/app/actions/auth';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
+import { DashboardRouteRefresh } from '@/components/dashboard-route-refresh';
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
     <SidebarProvider>
+      <DashboardRouteRefresh />
       <div className="flex min-h-screen w-full bg-gray-50/50 dark:bg-gray-900/50">
         <Sidebar className="border-r border-border bg-card">
           <SidebarHeader className="p-4 border-b border-border">

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { RefreshCw } from 'lucide-react';
-import { listConversionJobs, retryConversionJob } from '@/app/actions/images';
+import { retryConversionJob } from '@/app/actions/images';
 import type { ConversionJob } from '@/lib/image-conversion/types';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -11,6 +11,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 const labels: Record<ConversionJob['status'], string> = {
   queued: '排队中', pulling: '拉取镜像', inspecting: '读取配置', building: '构建上传', completed: '已完成', failed: '失败',
 };
+
+type JobsResponse = { jobs: ConversionJob[]; error?: string };
+
+async function fetchConversionJobs(): Promise<JobsResponse> {
+  const response = await fetch('/api/conversion-jobs', { cache: 'no-store' });
+  const result = await response.json() as JobsResponse;
+  if (!response.ok) throw new Error(result.error || '无法读取转换任务。');
+  return result;
+}
 
 export function ConversionJobs({ initialJobs, sourcePrefix }: { initialJobs: ConversionJob[]; sourcePrefix?: string }) {
   const [jobs, setJobs] = useState(initialJobs);
@@ -22,14 +31,18 @@ export function ConversionJobs({ initialJobs, sourcePrefix }: { initialJobs: Con
   useEffect(() => {
     let disposed = false;
     async function refresh() {
-      const result = await listConversionJobs();
-      if (disposed) return;
-      const visibleJobs = sourcePrefix ? result.jobs.filter((job) => job.sourceImage.startsWith(sourcePrefix)) : result.jobs;
-      const newlyCompleted = visibleJobs.some((job) => job.status === 'completed' && !knownCompleted.current.has(job.id));
-      visibleJobs.filter((job) => job.status === 'completed').forEach((job) => knownCompleted.current.add(job.id));
-      setJobs(visibleJobs);
-      setError(result.error || '');
-      if (newlyCompleted) router.refresh();
+      try {
+        const result = await fetchConversionJobs();
+        if (disposed) return;
+        const visibleJobs = sourcePrefix ? result.jobs.filter((job) => job.sourceImage.startsWith(sourcePrefix)) : result.jobs;
+        const newlyCompleted = visibleJobs.some((job) => job.status === 'completed' && !knownCompleted.current.has(job.id));
+        visibleJobs.filter((job) => job.status === 'completed').forEach((job) => knownCompleted.current.add(job.id));
+        setJobs(visibleJobs);
+        setError(result.error || '');
+        if (newlyCompleted) router.refresh();
+      } catch (refreshError) {
+        if (!disposed) setError(refreshError instanceof Error ? refreshError.message : '无法读取转换任务。');
+      }
     }
     const timer = window.setInterval(refresh, 3000);
     return () => { disposed = true; window.clearInterval(timer); };
@@ -37,10 +50,17 @@ export function ConversionJobs({ initialJobs, sourcePrefix }: { initialJobs: Con
 
   function retry(id: string) {
     startTransition(async () => {
-      const result = await retryConversionJob(id);
-      if (result.error) setError(result.error);
-      const refreshed = await listConversionJobs();
-      setJobs(sourcePrefix ? refreshed.jobs.filter((job) => job.sourceImage.startsWith(sourcePrefix)) : refreshed.jobs);
+      try {
+        const result = await retryConversionJob(id);
+        if (result.error) {
+          setError(result.error);
+          return;
+        }
+        const refreshed = await fetchConversionJobs();
+        setJobs(sourcePrefix ? refreshed.jobs.filter((job) => job.sourceImage.startsWith(sourcePrefix)) : refreshed.jobs);
+      } catch (refreshError) {
+        setError(refreshError instanceof Error ? refreshError.message : '无法重试转换任务。');
+      }
     });
   }
 
