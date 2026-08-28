@@ -59,17 +59,19 @@ function isAmd64Platform(platform: OciManifest['platform']) {
   return platform?.os === 'linux' && platform?.architecture === 'amd64';
 }
 
-function findAmd64Digest(value: unknown) {
+function findAmd64Digest(value: unknown): string | undefined {
   const rows = Array.isArray(value) ? value : [value];
   for (const row of rows) {
     if (!row || typeof row !== 'object') continue;
-    const item = row as DockerManifestVerbose;
+    const item = row as DockerManifestVerbose & { manifests?: unknown };
     const descriptor = item.Descriptor || item.descriptor || item;
     const platform = descriptor.platform || item.platform;
     const digest = descriptor.digest || item.digest;
     if (isAmd64Platform(platform) && typeof digest === 'string' && /^sha256:[a-f0-9]{64}$/i.test(digest)) {
       return digest;
     }
+    const nestedDigest: string | undefined = findAmd64Digest(item.manifests);
+    if (nestedDigest) return nestedDigest;
   }
   return undefined;
 }

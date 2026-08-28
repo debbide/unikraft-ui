@@ -15,9 +15,10 @@ npm run resolve:amd64 -- nginx:latest
 # image=nginx@sha256:...
 ```
 
-该脚本优先使用 `docker manifest inspect --verbose`，不支持时自动回退到
-`docker buildx imagetools inspect --raw`。执行前请确认 Docker daemon 可访问，并且已对
-私有 registry 完成 `docker login`。
+该脚本优先使用 `docker manifest inspect --verbose`，不支持时自动回退到不带 `--verbose`
+的 `docker manifest inspect`；如果 registry 不返回 manifest，则按 `linux/amd64` 拉取后
+从 `docker image inspect` 的 `RepoDigests` 读取编号，不依赖 Docker Buildx。执行前请确认
+Docker daemon 可访问，并且已对私有 registry 完成 `docker login`。
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started

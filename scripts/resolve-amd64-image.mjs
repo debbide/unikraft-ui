@@ -24,6 +24,8 @@ function findDigest(value) {
     const descriptor = row?.Descriptor ?? row?.descriptor ?? row;
     if (matchesAmd64(descriptor?.platform) && validDigest(descriptor.digest)) return descriptor.digest;
     if (matchesAmd64(row?.platform) && validDigest(row.digest)) return row.digest;
+    const nestedDigest = findDigest(row?.manifests);
+    if (nestedDigest) return nestedDigest;
   }
   return undefined;
 }
