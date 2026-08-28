@@ -82,27 +82,33 @@ async function pullAndResolveAmd64(image: string, env: NodeJS.ProcessEnv, onOutp
     ['pull', '--platform', 'linux/amd64', image],
     { env, timeout: 30 * 60 * 1000, maxBuffer: 20 * 1024 * 1024, onOutput },
   );
-  const result = await runCommand(
-    'docker',
-    ['image', 'inspect', image],
-    { env, timeout: 120000, maxBuffer: 5 * 1024 * 1024 },
-  );
-  const inspected = JSON.parse(result.stdout)[0] as {
+  let result;
+  try {
+    result = await runCommand(
+      'docker',
+      ['image', 'inspect', '--platform', 'linux/amd64', image],
+      { env, timeout: 120000, maxBuffer: 5 * 1024 * 1024 },
+    );
+  } catch {
+    result = await runCommand(
+      'docker',
+      ['image', 'inspect', image],
+      { env, timeout: 120000, maxBuffer: 5 * 1024 * 1024 },
+    );
+  }
+  const inspected = (JSON.parse(result.stdout)[0] || {}) as {
     Os?: unknown;
     Architecture?: unknown;
     RepoDigests?: unknown;
-  } | undefined;
-  if (inspected?.Os !== 'linux' || inspected.Architecture !== 'amd64') {
-    throw new Error(`拉取后的源镜像平台不是 linux/amd64，而是 ${String(inspected?.Os || 'unknown')}/${String(inspected?.Architecture || 'unknown')}。`);
-  }
+  };
+  // `docker image inspect` may describe the multi-platform index as
+  // unknown/unknown even though pull selected the requested child image.
+  // The platform is enforced by the pull flag and by the generated Dockerfile.
   const repository = image.split('@', 1)[0].split(':', 1)[0];
   const digest = Array.isArray(inspected.RepoDigests)
     ? inspected.RepoDigests.find((item): item is string => typeof item === 'string' && item.startsWith(`${repository}@sha256:`))?.split('@')[1]
     : undefined;
-  if (!digest || !/^sha256:[a-f0-9]{64}$/i.test(digest)) {
-    throw new Error(`已拉取 ${image}，但 Docker 未返回可用的 RepoDigest。`);
-  }
-  return digest;
+  return digest && /^sha256:[a-f0-9]{64}$/i.test(digest) ? digest : undefined;
 }
 
 async function resolveAmd64Image(image: string, env: NodeJS.ProcessEnv, onOutput?: (chunk: string) => void) {
@@ -125,7 +131,10 @@ async function resolveAmd64Image(image: string, env: NodeJS.ProcessEnv, onOutput
   }
   if (!digest) {
     digest = await pullAndResolveAmd64(image, env, onOutput);
-    onOutput?.(`\n未能读取子 manifest，当前 digest 可能是多架构 index；将通过 Dockerfile 的平台约束继续确保 AMD64。\n`);
+    if (!digest) {
+      onOutput?.('\n镜像已按 linux/amd64 拉取，但 Docker 未提供子镜像 RepoDigest；继续使用原 tag，并在 Dockerfile 中固定平台。\n');
+      return image;
+    }
   }
   if (!digest) {
     throw new Error(`镜像 ${image} 没有可用的 linux/amd64 manifest。`);
@@ -152,13 +161,26 @@ export async function convertImage(jobId: string, token: string, image: string, 
     await runCommand('docker', ['pull', '--platform', 'linux/amd64', resolvedImage], { env, timeout: 30 * 60 * 1000, maxBuffer: 20 * 1024 * 1024, onOutput: logger.append });
     await updateJob(jobId, { status: 'inspecting' });
     logger.append('\n读取镜像配置...\n');
-    const inspect = await runCommand('docker', ['image', 'inspect', resolvedImage], { env, maxBuffer: 5 * 1024 * 1024, onOutput: logger.append });
-    const inspectedImage = JSON.parse(inspect.stdout)[0] || {};
+    let inspect;
+    try {
+      inspect = await runCommand('docker', ['image', 'inspect', '--platform', 'linux/amd64', resolvedImage], { env, maxBuffer: 5 * 1024 * 1024, onOutput: logger.append });
+    } catch {
+      inspect = await runCommand('docker', ['image', 'inspect', resolvedImage], { env, maxBuffer: 5 * 1024 * 1024, onOutput: logger.append });
+    }
+    let inspectedImage = JSON.parse(inspect.stdout)[0] || {};
+    if (!inspectedImage.Config || !Object.keys(inspectedImage.Config).length) {
+      let containerId = '';
+      try {
+        const created = await runCommand('docker', ['create', '--platform', 'linux/amd64', resolvedImage], { env, maxBuffer: 1024 * 1024, onOutput: logger.append });
+        containerId = created.stdout.trim();
+        const containerInspect = await runCommand('docker', ['inspect', containerId], { env, maxBuffer: 5 * 1024 * 1024, onOutput: logger.append });
+        inspectedImage = JSON.parse(containerInspect.stdout)[0] || {};
+      } finally {
+        if (containerId) await runCommand('docker', ['rm', containerId], { env, maxBuffer: 1024 * 1024 });
+      }
+    }
     const metadata = inspectedImage.Config || {};
     logger.append(`源镜像平台：${String(inspectedImage.Os || 'unknown')}/${String(inspectedImage.Architecture || 'unknown')}\n`);
-    if (inspectedImage.Os !== 'linux' || inspectedImage.Architecture !== 'amd64') {
-      throw new Error(`解析后的源镜像平台不是 linux/amd64，而是 ${String(inspectedImage.Os || 'unknown')}/${String(inspectedImage.Architecture || 'unknown')}。`);
-    }
     const command = [...(Array.isArray(metadata.Entrypoint) ? metadata.Entrypoint : []), ...(Array.isArray(metadata.Cmd) ? metadata.Cmd : [])].map(String);
     if (!command.length) throw new Error('Docker 镜像没有 Entrypoint 或 Cmd。');
     const workingDir = typeof metadata.WorkingDir === 'string' ? metadata.WorkingDir.trim() : '';

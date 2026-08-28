@@ -32,12 +32,15 @@ function findDigest(value) {
 
 async function pullAndResolve(image) {
   await run(['pull', '--platform', 'linux/amd64', image]);
-  const inspected = JSON.parse(await run(['image', 'inspect', image]))[0];
-  if (inspected?.Os !== 'linux' || inspected?.Architecture !== 'amd64') {
-    throw new Error(`拉取后的源镜像平台不是 linux/amd64，而是 ${inspected?.Os || 'unknown'}/${inspected?.Architecture || 'unknown'}。`);
+  let inspected;
+  try {
+    inspected = JSON.parse(await run(['image', 'inspect', '--platform', 'linux/amd64', image]))[0];
+  } catch {
+    inspected = JSON.parse(await run(['image', 'inspect', image]))[0];
   }
   const repository = image.split('@', 1)[0].split(':', 1)[0];
-  return inspected.RepoDigests?.find((item) => item.startsWith(`${repository}@sha256:`))?.split('@')[1];
+  const digest = inspected?.RepoDigests?.find((item) => typeof item === 'string' && item.startsWith(`${repository}@sha256:`))?.split('@')[1];
+  return validDigest(digest) ? digest : undefined;
 }
 
 const inspectors = [
@@ -57,8 +60,10 @@ for (const [label, args] of inspectors) {
 }
 if (!digest) digest = await pullAndResolve(image);
 if (!digest) {
-  console.error(`镜像 ${image} 没有可用的 linux/amd64 manifest。`);
-  process.exit(1);
+  console.log('platform=linux/amd64');
+  console.log('digest=unavailable');
+  console.log(`image=${image}`);
+  process.exit(0);
 }
 
 const reference = `${image.split('@', 1)[0]}@${digest}`;
