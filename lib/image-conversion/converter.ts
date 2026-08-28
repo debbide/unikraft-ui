@@ -55,6 +55,60 @@ type DockerManifestVerbose = {
   platform?: OciManifest['platform'];
 };
 
+function parseRegistryImage(image: string) {
+  const reference = image.split('@', 1)[0];
+  const slash = reference.indexOf('/');
+  const first = slash === -1 ? '' : reference.slice(0, slash);
+  const registry = first.includes('.') || first.includes(':') || first === 'localhost' ? first : 'docker.io';
+  const apiRegistry = registry === 'docker.io' ? 'registry-1.docker.io' : registry;
+  const repository = (registry === 'docker.io' && slash === -1 ? `library/${reference}` : reference.slice(slash + 1));
+  const lastColon = repository.lastIndexOf(':');
+  const tag = lastColon > repository.lastIndexOf('/') ? repository.slice(lastColon + 1) : 'latest';
+  return { registry: apiRegistry, repository: lastColon > repository.lastIndexOf('/') ? repository.slice(0, lastColon) : repository, tag };
+}
+
+function imageRepository(image: string) {
+  const reference = image.split('@', 1)[0];
+  const slash = reference.lastIndexOf('/');
+  const colon = reference.lastIndexOf(':');
+  return colon > slash ? reference.slice(0, colon) : reference;
+}
+
+async function registryManifest(image: string, onOutput?: (chunk: string) => void) {
+  const { registry, repository, tag } = parseRegistryImage(image);
+  const endpoint = `https://${registry}/v2/${repository.split('/').map(encodeURIComponent).join('/')}/manifests/${encodeURIComponent(tag)}`;
+  const headers = {
+    Accept: [
+      'application/vnd.oci.image.index.v1+json',
+      'application/vnd.docker.distribution.manifest.list.v2+json',
+      'application/vnd.oci.image.manifest.v1+json',
+      'application/vnd.docker.distribution.manifest.v2+json',
+    ].join(', '),
+  };
+  let response = await fetch(endpoint, { headers });
+  if (response.status === 401) {
+    const challenge = response.headers.get('www-authenticate') || '';
+    const match = challenge.match(/realm="([^"]+)"(?:,\s*service="([^"]+)")?(?:,\s*scope="([^"]+)")?/i);
+    if (match) {
+      const tokenUrl = new URL(match[1]);
+      if (match[2]) tokenUrl.searchParams.set('service', match[2]);
+      tokenUrl.searchParams.set('scope', match[3] || `repository:${repository}:pull`);
+      const tokenResponse = await fetch(tokenUrl);
+      if (tokenResponse.ok) {
+        const tokenBody = await tokenResponse.json() as { token?: string; access_token?: string };
+        const token = tokenBody.token || tokenBody.access_token;
+        if (token) response = await fetch(endpoint, { headers: { ...headers, Authorization: `Bearer ${token}` } });
+      }
+    }
+  }
+  if (!response.ok) throw new Error(`Registry manifest 查询失败 HTTP ${response.status}：${await response.text()}`);
+  const manifest = await response.json() as unknown;
+  const digest = findAmd64Digest(manifest);
+  if (!digest) throw new Error(`Registry 返回的 ${image} 没有 linux/amd64 子 manifest。`);
+  onOutput?.(`Registry 已解析 linux/amd64 digest：${digest}\n`);
+  return digest;
+}
+
 function isAmd64Platform(platform: OciManifest['platform']) {
   return platform?.os === 'linux' && platform?.architecture === 'amd64';
 }
@@ -76,70 +130,9 @@ function findAmd64Digest(value: unknown): string | undefined {
   return undefined;
 }
 
-async function pullAndResolveAmd64(image: string, env: NodeJS.ProcessEnv, onOutput?: (chunk: string) => void) {
-  await runCommand(
-    'docker',
-    ['pull', '--platform', 'linux/amd64', image],
-    { env, timeout: 30 * 60 * 1000, maxBuffer: 20 * 1024 * 1024, onOutput },
-  );
-  let result;
-  try {
-    result = await runCommand(
-      'docker',
-      ['image', 'inspect', '--platform', 'linux/amd64', image],
-      { env, timeout: 120000, maxBuffer: 5 * 1024 * 1024 },
-    );
-  } catch {
-    result = await runCommand(
-      'docker',
-      ['image', 'inspect', image],
-      { env, timeout: 120000, maxBuffer: 5 * 1024 * 1024 },
-    );
-  }
-  const inspected = (JSON.parse(result.stdout)[0] || {}) as {
-    Os?: unknown;
-    Architecture?: unknown;
-    RepoDigests?: unknown;
-  };
-  // `docker image inspect` may describe the multi-platform index as
-  // unknown/unknown even though pull selected the requested child image.
-  // The platform is enforced by the pull flag and by the generated Dockerfile.
-  const repository = image.split('@', 1)[0].split(':', 1)[0];
-  const digest = Array.isArray(inspected.RepoDigests)
-    ? inspected.RepoDigests.find((item): item is string => typeof item === 'string' && item.startsWith(`${repository}@sha256:`))?.split('@')[1]
-    : undefined;
-  return digest && /^sha256:[a-f0-9]{64}$/i.test(digest) ? digest : undefined;
-}
-
-async function resolveAmd64Image(image: string, env: NodeJS.ProcessEnv, onOutput?: (chunk: string) => void) {
-  let digest: string | undefined;
-  const inspectors: [string, string, string[]][] = [
-    ['docker manifest inspect --verbose', 'docker', ['manifest', 'inspect', '--verbose', image]],
-    ['docker manifest inspect', 'docker', ['manifest', 'inspect', image]],
-    ['docker buildx imagetools inspect --raw', 'docker', ['buildx', 'imagetools', 'inspect', image, '--raw']],
-    ['skopeo inspect --raw', 'skopeo', ['inspect', '--raw', `docker://${image}`]],
-    ['crane manifest', 'crane', ['manifest', image]],
-  ];
-  for (const [label, command, args] of inspectors) {
-    if (digest) break;
-    try {
-      const result = await runCommand(command, args, { env, timeout: 120000, maxBuffer: 10 * 1024 * 1024 });
-      digest = findAmd64Digest(JSON.parse(result.stdout));
-    } catch (error) {
-      onOutput?.(`\n${label} 查询失败：${details(error)}\n`);
-    }
-  }
-  if (!digest) {
-    digest = await pullAndResolveAmd64(image, env, onOutput);
-    if (!digest) {
-      onOutput?.('\n镜像已按 linux/amd64 拉取，但 Docker 未提供子镜像 RepoDigest；继续使用原 tag，并在 Dockerfile 中固定平台。\n');
-      return image;
-    }
-  }
-  if (!digest) {
-    throw new Error(`镜像 ${image} 没有可用的 linux/amd64 manifest。`);
-  }
-  return `${image.split('@', 1)[0]}@${digest.toLowerCase()}`;
+async function resolveAmd64Image(image: string, onOutput?: (chunk: string) => void) {
+  const digest = await registryManifest(image, onOutput);
+  return `${imageRepository(image)}@${digest.toLowerCase()}`;
 }
 
 export async function convertImage(jobId: string, token: string, image: string, runtime = DEFAULT_RUNTIME) {
@@ -156,29 +149,13 @@ export async function convertImage(jobId: string, token: string, image: string, 
     await runCommand(UNIKRAFT_CLI, ['--config', configPath, 'login', '--no-browser', '--token', tokenPath], { env, timeout: 120000, onOutput: logger.append });
     await updateJob(jobId, { status: 'pulling' });
     logger.append(`\n查询 Docker 镜像 ${image} 的 linux/amd64 manifest...\n`);
-    const resolvedImage = await resolveAmd64Image(image, env, logger.append);
+    const resolvedImage = await resolveAmd64Image(image, logger.append);
     logger.append(`已锁定 AMD64 镜像：${resolvedImage}\n`);
     await runCommand('docker', ['pull', '--platform', 'linux/amd64', resolvedImage], { env, timeout: 30 * 60 * 1000, maxBuffer: 20 * 1024 * 1024, onOutput: logger.append });
     await updateJob(jobId, { status: 'inspecting' });
     logger.append('\n读取镜像配置...\n');
-    let inspect;
-    try {
-      inspect = await runCommand('docker', ['image', 'inspect', '--platform', 'linux/amd64', resolvedImage], { env, maxBuffer: 5 * 1024 * 1024, onOutput: logger.append });
-    } catch {
-      inspect = await runCommand('docker', ['image', 'inspect', resolvedImage], { env, maxBuffer: 5 * 1024 * 1024, onOutput: logger.append });
-    }
-    let inspectedImage = JSON.parse(inspect.stdout)[0] || {};
-    if (!inspectedImage.Config || !Object.keys(inspectedImage.Config).length) {
-      let containerId = '';
-      try {
-        const created = await runCommand('docker', ['create', '--platform', 'linux/amd64', resolvedImage], { env, maxBuffer: 1024 * 1024, onOutput: logger.append });
-        containerId = created.stdout.trim();
-        const containerInspect = await runCommand('docker', ['inspect', containerId], { env, maxBuffer: 5 * 1024 * 1024, onOutput: logger.append });
-        inspectedImage = JSON.parse(containerInspect.stdout)[0] || {};
-      } finally {
-        if (containerId) await runCommand('docker', ['rm', containerId], { env, maxBuffer: 1024 * 1024 });
-      }
-    }
+    const inspect = await runCommand('docker', ['image', 'inspect', resolvedImage], { env, maxBuffer: 5 * 1024 * 1024, onOutput: logger.append });
+    const inspectedImage = JSON.parse(inspect.stdout)[0] || {};
     const metadata = inspectedImage.Config || {};
     logger.append(`源镜像平台：${String(inspectedImage.Os || 'unknown')}/${String(inspectedImage.Architecture || 'unknown')}\n`);
     const command = [...(Array.isArray(metadata.Entrypoint) ? metadata.Entrypoint : []), ...(Array.isArray(metadata.Cmd) ? metadata.Cmd : [])].map(String);
