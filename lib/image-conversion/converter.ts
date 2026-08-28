@@ -107,30 +107,25 @@ async function pullAndResolveAmd64(image: string, env: NodeJS.ProcessEnv, onOutp
 
 async function resolveAmd64Image(image: string, env: NodeJS.ProcessEnv, onOutput?: (chunk: string) => void) {
   let digest: string | undefined;
-  try {
-    const result = await runCommand(
-      'docker',
-      ['manifest', 'inspect', '--verbose', image],
-      { env, timeout: 120000, maxBuffer: 10 * 1024 * 1024 },
-    );
-    digest = findAmd64Digest(JSON.parse(result.stdout));
-  } catch (error) {
-    onOutput?.(`\n详细 manifest 查询失败，改用兼容模式：${details(error)}\n`);
-  }
-  if (!digest) {
+  const inspectors: [string, string, string[]][] = [
+    ['docker manifest inspect --verbose', 'docker', ['manifest', 'inspect', '--verbose', image]],
+    ['docker manifest inspect', 'docker', ['manifest', 'inspect', image]],
+    ['docker buildx imagetools inspect --raw', 'docker', ['buildx', 'imagetools', 'inspect', image, '--raw']],
+    ['skopeo inspect --raw', 'skopeo', ['inspect', '--raw', `docker://${image}`]],
+    ['crane manifest', 'crane', ['manifest', image]],
+  ];
+  for (const [label, command, args] of inspectors) {
+    if (digest) break;
     try {
-      const result = await runCommand(
-        'docker',
-        ['manifest', 'inspect', image],
-        { env, timeout: 120000, maxBuffer: 10 * 1024 * 1024 },
-      );
+      const result = await runCommand(command, args, { env, timeout: 120000, maxBuffer: 10 * 1024 * 1024 });
       digest = findAmd64Digest(JSON.parse(result.stdout));
     } catch (error) {
-      onOutput?.(`\n普通 manifest 查询失败，改为按平台拉取后读取 RepoDigest：${details(error)}\n`);
+      onOutput?.(`\n${label} 查询失败：${details(error)}\n`);
     }
   }
   if (!digest) {
     digest = await pullAndResolveAmd64(image, env, onOutput);
+    onOutput?.(`\n未能读取子 manifest，当前 digest 可能是多架构 index；将通过 Dockerfile 的平台约束继续确保 AMD64。\n`);
   }
   if (!digest) {
     throw new Error(`镜像 ${image} 没有可用的 linux/amd64 manifest。`);
@@ -168,7 +163,7 @@ export async function convertImage(jobId: string, token: string, image: string, 
     if (!command.length) throw new Error('Docker 镜像没有 Entrypoint 或 Cmd。');
     const workingDir = typeof metadata.WorkingDir === 'string' ? metadata.WorkingDir.trim() : '';
     const runtimeCommand = workingDir ? ['/bin/sh', '-c', `cd ${shellQuote(workingDir)} && exec ${command.map(shellQuote).join(' ')}`] : command;
-    await fs.writeFile(path.join(dir, 'Dockerfile'), `FROM ${resolvedImage}\n`);
+    await fs.writeFile(path.join(dir, 'Dockerfile'), `FROM --platform=linux/amd64 ${resolvedImage}\n`);
     await fs.writeFile(path.join(dir, 'Kraftfile'), ['spec: v0.7', '', `runtime: ${runtime}`, '', 'rootfs:', '  source:', '    path: ./Dockerfile', '    type: dockerfile', '  format: erofs', '', `cmd: ${JSON.stringify(runtimeCommand)}`].join('\n'));
     const namespace = process.env.UNIKRAFT_IMAGE_NAMESPACE || 'dghdnk';
     const imageName = image.split('/').pop()?.replace(/[^a-zA-Z0-9_.-]/g, '-') || 'app';

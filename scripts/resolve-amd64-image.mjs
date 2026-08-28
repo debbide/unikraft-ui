@@ -40,19 +40,19 @@ async function pullAndResolve(image) {
   return inspected.RepoDigests?.find((item) => item.startsWith(`${repository}@sha256:`))?.split('@')[1];
 }
 
+const inspectors = [
+  ['docker manifest inspect --verbose', ['manifest', 'inspect', '--verbose', image]],
+  ['docker manifest inspect', ['manifest', 'inspect', image]],
+  ['docker buildx imagetools inspect --raw', ['buildx', 'imagetools', 'inspect', image, '--raw']],
+];
+
 let digest;
-try {
-  digest = findDigest(JSON.parse(await run(['manifest', 'inspect', '--verbose', image])));
-} catch {
-  // Older Docker CLIs may not support --verbose. The plain manifest command is
-  // available without Docker Buildx and still exposes platform descriptors.
-}
-if (!digest) {
+for (const [label, args] of inspectors) {
+  if (digest) break;
   try {
-    digest = findDigest(JSON.parse(await run(['manifest', 'inspect', image])));
-  } catch {
-    // Some registries reject Docker's manifest endpoint even though a normal
-    // platform pull still works.
+    digest = findDigest(JSON.parse(await run(args)));
+  } catch (error) {
+    console.error(`${label} 查询失败：${error.message}`);
   }
 }
 if (!digest) digest = await pullAndResolve(image);
