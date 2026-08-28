@@ -28,6 +28,16 @@ function findDigest(value) {
   return undefined;
 }
 
+async function pullAndResolve(image) {
+  await run(['pull', '--platform', 'linux/amd64', image]);
+  const inspected = JSON.parse(await run(['image', 'inspect', image]))[0];
+  if (inspected?.Os !== 'linux' || inspected?.Architecture !== 'amd64') {
+    throw new Error(`拉取后的源镜像平台不是 linux/amd64，而是 ${inspected?.Os || 'unknown'}/${inspected?.Architecture || 'unknown'}。`);
+  }
+  const repository = image.split('@', 1)[0].split(':', 1)[0];
+  return inspected.RepoDigests?.find((item) => item.startsWith(`${repository}@sha256:`))?.split('@')[1];
+}
+
 let digest;
 try {
   digest = findDigest(JSON.parse(await run(['manifest', 'inspect', '--verbose', image])));
@@ -35,7 +45,15 @@ try {
   // Older Docker CLIs may not support --verbose. The plain manifest command is
   // available without Docker Buildx and still exposes platform descriptors.
 }
-if (!digest) digest = findDigest(JSON.parse(await run(['manifest', 'inspect', image])));
+if (!digest) {
+  try {
+    digest = findDigest(JSON.parse(await run(['manifest', 'inspect', image])));
+  } catch {
+    // Some registries reject Docker's manifest endpoint even though a normal
+    // platform pull still works.
+  }
+}
+if (!digest) digest = await pullAndResolve(image);
 if (!digest) {
   console.error(`镜像 ${image} 没有可用的 linux/amd64 manifest。`);
   process.exit(1);

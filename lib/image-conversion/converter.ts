@@ -74,6 +74,35 @@ function findAmd64Digest(value: unknown) {
   return undefined;
 }
 
+async function pullAndResolveAmd64(image: string, env: NodeJS.ProcessEnv, onOutput?: (chunk: string) => void) {
+  await runCommand(
+    'docker',
+    ['pull', '--platform', 'linux/amd64', image],
+    { env, timeout: 30 * 60 * 1000, maxBuffer: 20 * 1024 * 1024, onOutput },
+  );
+  const result = await runCommand(
+    'docker',
+    ['image', 'inspect', image],
+    { env, timeout: 120000, maxBuffer: 5 * 1024 * 1024 },
+  );
+  const inspected = JSON.parse(result.stdout)[0] as {
+    Os?: unknown;
+    Architecture?: unknown;
+    RepoDigests?: unknown;
+  } | undefined;
+  if (inspected?.Os !== 'linux' || inspected.Architecture !== 'amd64') {
+    throw new Error(`拉取后的源镜像平台不是 linux/amd64，而是 ${String(inspected?.Os || 'unknown')}/${String(inspected?.Architecture || 'unknown')}。`);
+  }
+  const repository = image.split('@', 1)[0].split(':', 1)[0];
+  const digest = Array.isArray(inspected.RepoDigests)
+    ? inspected.RepoDigests.find((item): item is string => typeof item === 'string' && item.startsWith(`${repository}@sha256:`))?.split('@')[1]
+    : undefined;
+  if (!digest || !/^sha256:[a-f0-9]{64}$/i.test(digest)) {
+    throw new Error(`已拉取 ${image}，但 Docker 未返回可用的 RepoDigest。`);
+  }
+  return digest;
+}
+
 async function resolveAmd64Image(image: string, env: NodeJS.ProcessEnv, onOutput?: (chunk: string) => void) {
   let digest: string | undefined;
   try {
@@ -87,12 +116,19 @@ async function resolveAmd64Image(image: string, env: NodeJS.ProcessEnv, onOutput
     onOutput?.(`\n详细 manifest 查询失败，改用兼容模式：${details(error)}\n`);
   }
   if (!digest) {
-    const result = await runCommand(
-      'docker',
-      ['manifest', 'inspect', image],
-      { env, timeout: 120000, maxBuffer: 10 * 1024 * 1024 },
-    );
-    digest = findAmd64Digest(JSON.parse(result.stdout));
+    try {
+      const result = await runCommand(
+        'docker',
+        ['manifest', 'inspect', image],
+        { env, timeout: 120000, maxBuffer: 10 * 1024 * 1024 },
+      );
+      digest = findAmd64Digest(JSON.parse(result.stdout));
+    } catch (error) {
+      onOutput?.(`\n普通 manifest 查询失败，改为按平台拉取后读取 RepoDigest：${details(error)}\n`);
+    }
+  }
+  if (!digest) {
+    digest = await pullAndResolveAmd64(image, env, onOutput);
   }
   if (!digest) {
     throw new Error(`镜像 ${image} 没有可用的 linux/amd64 manifest。`);
