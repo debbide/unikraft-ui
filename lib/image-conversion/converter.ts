@@ -84,14 +84,12 @@ async function resolveAmd64Image(image: string, env: NodeJS.ProcessEnv, onOutput
     );
     digest = findAmd64Digest(JSON.parse(result.stdout));
   } catch (error) {
-    // Older Docker installations or private registries may not support this command.
-    // The buildx raw index is retained as a compatible fallback.
-    onOutput?.(`\n普通 manifest 查询失败，改用 buildx：${details(error)}\n`);
+    onOutput?.(`\n详细 manifest 查询失败，改用兼容模式：${details(error)}\n`);
   }
   if (!digest) {
     const result = await runCommand(
       'docker',
-      ['buildx', 'imagetools', 'inspect', image, '--raw'],
+      ['manifest', 'inspect', image],
       { env, timeout: 120000, maxBuffer: 10 * 1024 * 1024 },
     );
     digest = findAmd64Digest(JSON.parse(result.stdout));

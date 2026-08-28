@@ -28,12 +28,14 @@ function findDigest(value) {
   return undefined;
 }
 
-const raw = await run(['manifest', 'inspect', '--verbose', image]);
-let digest = findDigest(JSON.parse(raw));
-if (!digest) {
-  const index = JSON.parse(await run(['buildx', 'imagetools', 'inspect', image, '--raw']));
-  digest = findDigest(index);
+let digest;
+try {
+  digest = findDigest(JSON.parse(await run(['manifest', 'inspect', '--verbose', image])));
+} catch {
+  // Older Docker CLIs may not support --verbose. The plain manifest command is
+  // available without Docker Buildx and still exposes platform descriptors.
 }
+if (!digest) digest = findDigest(JSON.parse(await run(['manifest', 'inspect', image])));
 if (!digest) {
   console.error(`镜像 ${image} 没有可用的 linux/amd64 manifest。`);
   process.exit(1);
