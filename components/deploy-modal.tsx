@@ -7,9 +7,15 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { deployInstance } from '@/app/actions/instances';
-import { Loader2, Plus } from 'lucide-react';
+import { Loader2, Plus, Trash2 } from 'lucide-react';
 
 const METROS = ['dal', 'sfo', 'was', 'fra', 'sin'];
+const PORT_PROTOCOLS = [
+  { value: 'http', label: 'HTTP' },
+  { value: 'http+tls', label: 'HTTP + TLS' },
+  { value: 'tls', label: '仅 TLS' },
+] as const;
+type PortRow = { external: string; internal: string; protocol: (typeof PORT_PROTOCOLS)[number]['value'] };
 type VolumeOption = { name: string; state?: string };
 
 export function DeployModal({
@@ -21,8 +27,17 @@ export function DeployModal({
 }) {
   const [open, setOpen] = useState(false);
   const [metro, setMetro] = useState('sin');
+  const [ports, setPorts] = useState<PortRow[]>([
+    { external: '443', internal: '8080', protocol: 'http+tls' },
+  ]);
   const [state, formAction, pending] = useActionState(deployInstance, null);
   const availableVolumes = volumesByMetro[metro] || [];
+
+  const updatePort = (index: number, field: keyof PortRow, value: string) => {
+    setPorts((current) => current.map((port, portIndex) => (
+      portIndex === index ? { ...port, [field]: value } : port
+    )));
+  };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -110,9 +125,70 @@ export function DeployModal({
             </div>
           </div>
 
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="ports" className="text-right">开放端口 (Ports)</Label>
-            <Input id="ports" name="ports" placeholder="例如: 443:3000/http+tls 或 8080" className="col-span-3" />
+          <div className="grid grid-cols-4 items-start gap-4">
+            <Label className="text-right mt-2">开放端口 (Ports)</Label>
+            <div className="col-span-3 grid gap-2">
+              {ports.map((port, index) => {
+                const portValue = `${port.external}:${port.internal}/${port.protocol}`;
+                return (
+                  <div key={index} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.25fr)_auto] items-center gap-2">
+                    <Input
+                      aria-label={`第 ${index + 1} 行外部端口`}
+                      name={`port_external_${index}`}
+                      type="number"
+                      min="1"
+                      max="65535"
+                      value={port.external}
+                      onChange={(event) => updatePort(index, 'external', event.target.value)}
+                      placeholder="外部"
+                      required
+                    />
+                    <Input
+                      aria-label={`第 ${index + 1} 行内部端口`}
+                      name={`port_internal_${index}`}
+                      type="number"
+                      min="1"
+                      max="65535"
+                      value={port.internal}
+                      onChange={(event) => updatePort(index, 'internal', event.target.value)}
+                      placeholder="内部"
+                      required
+                    />
+                    <Select value={port.protocol} onValueChange={(value) => value && updatePort(index, 'protocol', value)}>
+                      <SelectTrigger aria-label={`第 ${index + 1} 行协议`}><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {PORT_PROTOCOLS.map((protocol) => (
+                          <SelectItem key={protocol.value} value={protocol.value}>{protocol.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <input type="hidden" name="ports" value={portValue} />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`删除第 ${index + 1} 行端口`}
+                      title="删除端口"
+                      onClick={() => setPorts((current) => current.filter((_, portIndex) => portIndex !== index))}
+                      disabled={ports.length === 1}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                );
+              })}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-fit"
+                onClick={() => setPorts((current) => [...current, { external: '', internal: '', protocol: 'http' }])}
+              >
+                <Plus className="h-4 w-4" />
+                添加端口
+              </Button>
+              <p className="text-xs text-muted-foreground">外部端口 → 内部端口</p>
+            </div>
           </div>
 
           <div className="grid grid-cols-4 items-center gap-4">

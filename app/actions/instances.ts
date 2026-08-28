@@ -23,6 +23,19 @@ function normalizePublishedPort(value: string) {
   return match[1] === '443' ? `${value}/http+tls` : match[1] === '80' ? `${value}/http` : value;
 }
 
+function parsePublishedPorts(formData: FormData) {
+  const values = formData.getAll('ports').map(String).map((value) => value.trim()).filter(Boolean);
+  if (values.length === 0) throw new Error('至少需要填写一个开放端口。');
+  const ports = values.map(normalizePublishedPort);
+  for (const port of ports) {
+    const match = port.match(/^(\d+):(\d+)\/(http|http\+tls|tls)$/);
+    if (!match || Number(match[1]) > 65535 || Number(match[2]) > 65535 || Number(match[1]) < 1 || Number(match[2]) < 1) {
+      throw new Error('端口格式无效，请填写 1-65535 范围内的端口并选择有效协议。');
+    }
+  }
+  return ports;
+}
+
 function commandDetails(error: unknown) {
   return [
     error instanceof Error ? error.message : '',
@@ -68,14 +81,12 @@ async function runConvertedImage(
   image: string,
   token: string,
   metro: string,
-  portsRaw: string,
   formData: FormData,
 ) {
   if (isMetroIndexReference(image) || !CONVERTED_IMAGE_PATTERN.test(image)) {
     throw new Error('请选择临时镜像列表中的已转换镜像。');
   }
-  const ports = portsRaw.split('\n').map((value) => normalizePublishedPort(value.trim())).filter(Boolean);
-  if (ports.length === 0) throw new Error('至少需要填写一个开放端口。');
+  const ports = parsePublishedPorts(formData);
 
   const memory = Number(formData.get('memory_mb') || 512);
   const vcpus = Number(formData.get('vcpu') || 1);
@@ -127,11 +138,10 @@ export async function deployInstance(_previousState: unknown, formData: FormData
 
   const image = String(formData.get('image') || '').trim();
   const metro = String(formData.get('metro') || '').trim();
-  const portsRaw = String(formData.get('ports') || '');
   if (!image || !metro) return { error: '请选择已转换镜像和 Metro。' };
 
   try {
-    await runConvertedImage(image, token, metro, portsRaw, formData);
+    await runConvertedImage(image, token, metro, formData);
     revalidatePath('/dashboard/instances');
     return { success: true, message: '实例部署成功。' };
   } catch (error) {
