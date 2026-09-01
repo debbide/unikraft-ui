@@ -150,6 +150,8 @@ export async function convertImage(jobId: string, token: string, image: string, 
     const cleanOutput = (loginResult.stderr + loginResult.stdout).replace(/\x1b\[[0-9;]*m/g, '');
     const match = cleanOutput.match(/profile=([a-zA-Z0-9_-]+)/i) || cleanOutput.match(/organization=([a-zA-Z0-9_-]+)/i);
     const extractedNamespace = match ? match[1] : '';
+    logger.append(`\n[调试探针] 干净的登录日志：${cleanOutput.trim().replace(/\s+/g, ' ')}\n`);
+    logger.append(`[调试探针] 动态提取的用户名：${extractedNamespace || '提取失败！'}\n`);
     await updateJob(jobId, { status: 'pulling' });
     logger.append(`\n查询 Docker 镜像 ${image} 的 linux/amd64 manifest...\n`);
     const resolvedImage = await resolveAmd64Image(image, logger.append);
