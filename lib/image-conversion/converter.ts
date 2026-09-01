@@ -147,7 +147,8 @@ export async function convertImage(jobId: string, token: string, image: string, 
     await fs.writeFile(tokenPath, token, { mode: 0o600 });
     await logger.flush();
     const loginResult = await runCommand(UNIKRAFT_CLI, ['--config', configPath, 'login', '--no-browser', '--token', tokenPath], { env, timeout: 120000, onOutput: logger.append });
-    const match = loginResult.stderr.match(/profile=([a-zA-Z0-9_-]+)/i) || loginResult.stderr.match(/organization=([a-zA-Z0-9_-]+)/i);
+    const cleanOutput = (loginResult.stderr + loginResult.stdout).replace(/\x1b\[[0-9;]*m/g, '');
+    const match = cleanOutput.match(/profile=([a-zA-Z0-9_-]+)/i) || cleanOutput.match(/organization=([a-zA-Z0-9_-]+)/i);
     const extractedNamespace = match ? match[1] : '';
     await updateJob(jobId, { status: 'pulling' });
     logger.append(`\n查询 Docker 镜像 ${image} 的 linux/amd64 manifest...\n`);
