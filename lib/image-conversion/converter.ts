@@ -146,7 +146,9 @@ export async function convertImage(jobId: string, token: string, image: string, 
   try {
     await fs.writeFile(tokenPath, token, { mode: 0o600 });
     await logger.flush();
-    await runCommand(UNIKRAFT_CLI, ['--config', configPath, 'login', '--no-browser', '--token', tokenPath], { env, timeout: 120000, onOutput: logger.append });
+    const loginResult = await runCommand(UNIKRAFT_CLI, ['--config', configPath, 'login', '--no-browser', '--token', tokenPath], { env, timeout: 120000, onOutput: logger.append });
+    const match = loginResult.stderr.match(/profile=([a-zA-Z0-9_-]+)/i) || loginResult.stderr.match(/organization=([a-zA-Z0-9_-]+)/i);
+    const extractedNamespace = match ? match[1] : '';
     await updateJob(jobId, { status: 'pulling' });
     logger.append(`\n查询 Docker 镜像 ${image} 的 linux/amd64 manifest...\n`);
     const resolvedImage = await resolveAmd64Image(image, logger.append);
@@ -164,7 +166,7 @@ export async function convertImage(jobId: string, token: string, image: string, 
     const runtimeCommand = workingDir ? ['/bin/sh', '-c', `cd ${shellQuote(workingDir)} && exec ${command.map(shellQuote).join(' ')}`] : command;
     await fs.writeFile(path.join(dir, 'Dockerfile'), `FROM --platform=linux/amd64 ${resolvedImage}\n`);
     await fs.writeFile(path.join(dir, 'Kraftfile'), ['spec: v0.7', '', `runtime: ${runtime}`, '', 'rootfs:', '  source:', '    path: ./Dockerfile', '    type: dockerfile', '  format: erofs', '', `cmd: ${JSON.stringify(runtimeCommand)}`].join('\n'));
-    const namespace = process.env.UNIKRAFT_IMAGE_NAMESPACE || 'dghdnk';
+    const namespace = process.env.UNIKRAFT_IMAGE_NAMESPACE || extractedNamespace || 'dghdnk';
     const imageName = image.split('/').pop()?.replace(/[^a-zA-Z0-9_.-]/g, '-') || 'app';
     const outputImage = `${namespace}/converted-${imageName}-${jobId.slice(0, 8)}:latest`;
     await updateJob(jobId, { status: 'building', outputImage });
