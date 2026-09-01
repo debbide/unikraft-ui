@@ -15,14 +15,18 @@ export async function buildExample(jobId: string, token: string, templateId: str
   const login = await fs.mkdtemp(path.join(os.tmpdir(), 'unikraft-login-'));
   const env = { ...process.env, KRAFTCLOUD_TOKEN: token };
   const tokenPath = path.join(login, 'token'); const configPath = path.join(login, 'config');
-  const namespace = process.env.UNIKRAFT_IMAGE_NAMESPACE || 'dghdnk';
-  // Keep the existing temporary-image/deployment allow-list compatible.
-  const output = `${namespace}/converted-example-${template.id}-${EXAMPLES_COMMIT.slice(0, 8)}:latest`;
   const logger = createJobLogger(jobId, '登录 Unikraft Cloud...\n');
   try {
     await fs.writeFile(tokenPath, token, { mode: 0o600 });
     await logger.flush();
-    await runCommand(cli, ['--config', configPath, 'login', '--no-browser', '--token', tokenPath], { env, timeout: 120000, onOutput: logger.append });
+    const loginResult = await runCommand(cli, ['--config', configPath, 'login', '--no-browser', '--token', tokenPath], { env, timeout: 120000, onOutput: logger.append });
+    const cleanOutput = (loginResult.stderr + loginResult.stdout).replace(/\x1b\[[0-9;]*m/g, '');
+    const match = cleanOutput.match(/profile=([a-zA-Z0-9_-]+)/i) || cleanOutput.match(/organization=([a-zA-Z0-9_-]+)/i);
+    const extractedNamespace = match ? match[1] : '';
+    logger.append(`\n[调试探针] 干净的登录日志：${cleanOutput.trim().replace(/\s+/g, ' ')}\n`);
+    logger.append(`[调试探针] 动态提取的用户名：${extractedNamespace || '提取失败！'}\n`);
+    const namespace = process.env.UNIKRAFT_IMAGE_NAMESPACE || extractedNamespace || 'dghdnk';
+    const output = `${namespace}/converted-example-${template.id}-${EXAMPLES_COMMIT.slice(0, 8)}:latest`;
     await updateJob(jobId, { status: 'pulling', outputImage: output });
     logger.append('\n下载官方示例源码...\n');
     await runCommand('git', ['clone', '--depth', '1', '--no-checkout', EXAMPLES_REPOSITORY, root], { env, timeout: 120000, maxBuffer: 5 * 1024 * 1024, onOutput: logger.append });
