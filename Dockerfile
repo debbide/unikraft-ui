@@ -8,7 +8,6 @@ RUN curl --proto '=https' --tlsv1.2 -fsSL https://unikraft.com/cli/install.sh | 
 ENV PATH="/root/.local/bin:${PATH}"
 ENV UNIKRAFT_CLI=unikraft
 ENV UNIKRAFT_DATA_DIR=/app/data
-ENV UNIKRAFT_SSH_PRIVATE_KEY_PATH=/run/secrets/unikraft_ssh_key
 WORKDIR /app
 
 ARG DEPLOYMENT_VERSION

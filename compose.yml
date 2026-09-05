@@ -5,10 +5,8 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      UNIKRAFT_SSH_PRIVATE_KEY_PATH: /run/secrets/unikraft_ssh_key
-      UNIKRAFT_SSH_HOST_FINGERPRINTS: ${UNIKRAFT_SSH_HOST_FINGERPRINTS:-}
+      UNIKRAFT_SSH_PASSWORD: ${UNIKRAFT_SSH_PASSWORD:-unikraft}
     ports:
       - "127.0.0.1:18689:3000"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./secrets/unikraft_ssh_key:/run/secrets/unikraft_ssh_key:ro
