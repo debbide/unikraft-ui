@@ -156,3 +156,37 @@ export async function deleteInstance(uuid: string, metro: string) {
   revalidatePath('/dashboard/instances');
   return { success: true };
 }
+
+export type InstanceLifecycleAction = 'start' | 'stop' | 'restart';
+
+export async function changeInstanceState(
+  uuid: string,
+  metro: string,
+  action: InstanceLifecycleAction,
+) {
+  const token = await getToken();
+  if (!token) return { error: 'Unauthorized' };
+  if (!uuid || !/^[a-z]{3}$/.test(metro)) return { error: '实例参数无效。' };
+
+  try {
+    await fetchUnikraft(
+      `/v1/instances/${encodeURIComponent(uuid)}/${action}`,
+      token,
+      {
+        method: 'PUT',
+        body: JSON.stringify(
+          action === 'start'
+            ? { timeout_s: 10 }
+            : { force: false, drain_timeout_ms: 5000 },
+        ),
+      },
+      metro,
+    );
+    revalidatePath('/dashboard/instances');
+    return { success: true };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : '实例状态变更失败。',
+    };
+  }
+}

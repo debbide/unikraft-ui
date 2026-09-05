@@ -6,6 +6,7 @@ import { DeployModal } from '@/components/deploy-modal';
 import { DeleteInstanceButton } from '@/components/delete-instance-button';
 import { listTemporaryImages } from '@/app/actions/images';
 import { InstanceDiagnostics } from '@/components/instance-diagnostics';
+import { InstanceLifecycleControls } from '@/components/instance-lifecycle-controls';
 
 type Instance = {
   uuid: string;
@@ -108,6 +109,12 @@ export default async function InstancesPage() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
+                      <InstanceLifecycleControls
+                        uuid={instance.uuid}
+                        metro={instance.metro}
+                        name={instance.name}
+                        state={instance.state}
+                      />
                       <InstanceDiagnostics uuid={instance.uuid} metro={instance.metro} name={instance.name} />
                       <DeleteInstanceButton uuid={instance.uuid} metro={instance.metro} name={instance.name} />
                     </div>
