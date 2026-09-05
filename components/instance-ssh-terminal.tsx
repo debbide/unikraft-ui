@@ -84,7 +84,7 @@ export function InstanceSshTerminal({ uuid, metro, name }: { uuid: string; metro
         终端
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="flex h-[82vh] max-h-[900px] w-[calc(100vw-2rem)] max-w-6xl flex-col gap-3 overflow-hidden bg-zinc-950 p-4 text-zinc-100">
+        <DialogContent className="flex h-[90dvh] w-[96vw] max-w-[96vw] flex-col gap-3 overflow-hidden bg-zinc-950 p-4 text-zinc-100 sm:max-w-[96vw] lg:h-[86vh] lg:w-[90vw] lg:max-w-[90vw] xl:max-w-7xl">
           <DialogHeader>
             <DialogTitle>{name} SSH 终端</DialogTitle>
             <DialogDescription className="text-zinc-400">{metro.toUpperCase()} · {status}</DialogDescription>
