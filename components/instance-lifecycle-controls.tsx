@@ -1,6 +1,6 @@
 'use client';
 
-import { useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Play, RotateCw, Square } from 'lucide-react';
 import {
@@ -20,27 +20,55 @@ const transitionalStates = new Set(['starting', 'draining', 'stopping']);
 
 export function InstanceLifecycleControls({ uuid, metro, name, state }: Props) {
   const [isPending, startTransition] = useTransition();
+  const [pendingAction, setPendingAction] = useState<InstanceLifecycleAction | null>(null);
   const router = useRouter();
   const isTransitioning = transitionalStates.has(state);
+
+  useEffect(() => {
+    if (!isTransitioning) return;
+
+    const timer = window.setInterval(() => {
+      router.refresh();
+    }, 1500);
+
+    return () => window.clearInterval(timer);
+  }, [isTransitioning, router]);
 
   function run(action: InstanceLifecycleAction) {
     const label = action === 'start' ? '启动' : action === 'stop' ? '停止' : '重启';
     if (action !== 'start' && !window.confirm(`确定要${label}实例 ${name} 吗？`)) return;
 
+    setPendingAction(action);
     startTransition(async () => {
-      const result = await changeInstanceState(uuid, metro, action);
-      if (result.error) {
-        window.alert(`${label}失败: ${result.error}`);
-        return;
+      try {
+        const result = await changeInstanceState(uuid, metro, action);
+        if (result.error) {
+          window.alert(`${label}失败: ${result.error}`);
+          return;
+        }
+        router.refresh();
+      } finally {
+        setPendingAction(null);
       }
-      router.refresh();
     });
   }
 
-  if (isTransitioning || isPending) {
+  if (isPending && pendingAction) {
+    const label = pendingAction === 'start' ? '启动中' : pendingAction === 'stop' ? '停止中' : '重启中';
     return (
-      <Button size="sm" variant="outline" disabled aria-label="实例状态变更中">
+      <Button size="sm" variant="outline" disabled aria-label={label}>
         <Loader2 className="h-4 w-4 animate-spin" />
+        {label}
+      </Button>
+    );
+  }
+
+  if (isTransitioning) {
+    const label = state === 'starting' ? '启动中' : state === 'draining' ? '停止中' : '停止中';
+    return (
+      <Button size="sm" variant="outline" disabled aria-label={label}>
+        <Loader2 className="h-4 w-4 animate-spin" />
+        {label}
       </Button>
     );
   }
