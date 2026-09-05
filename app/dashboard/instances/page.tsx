@@ -7,6 +7,9 @@ import { DeleteInstanceButton } from '@/components/delete-instance-button';
 import { listTemporaryImages } from '@/app/actions/images';
 import { InstanceDiagnostics } from '@/components/instance-diagnostics';
 import { InstanceLifecycleControls } from '@/components/instance-lifecycle-controls';
+import { InstanceSshTerminal } from '@/components/instance-ssh-terminal';
+
+export const dynamic = 'force-dynamic';
 
 type Instance = {
   uuid: string;
@@ -36,7 +39,12 @@ export default async function InstancesPage() {
   const { images } = await listTemporaryImages({ includeSizes: false });
   try {
     const results = await Promise.allSettled(
-      METROS.map(metro => fetchUnikraft<InstanceResponse>('/v1/instances', token, {}, metro).then(res => ({ metro, instances: res?.data?.instances || [] })))
+      METROS.map(metro => fetchUnikraft<InstanceResponse>(
+        '/v1/instances',
+        token,
+        { cache: 'no-store' },
+        metro,
+      ).then(res => ({ metro, instances: res?.data?.instances || [] })))
     );
 
     results.forEach(result => {
@@ -109,6 +117,9 @@ export default async function InstancesPage() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
+                      {instance.state === 'running' && instance.service_group?.domains?.[0]?.fqdn ? (
+                        <InstanceSshTerminal uuid={instance.uuid} metro={instance.metro} name={instance.name} />
+                      ) : null}
                       <InstanceLifecycleControls
                         uuid={instance.uuid}
                         metro={instance.metro}
