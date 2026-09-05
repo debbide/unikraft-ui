@@ -1,5 +1,3 @@
-import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { connect as connectTls } from 'node:tls';
 import next from 'next';
@@ -37,14 +35,6 @@ function allowedOrigins(request) {
   return host ? new Set([`${protocol}://${host}`, `http://${host}`, `https://${host}`]) : new Set();
 }
 
-function fingerprint(key) {
-  return `SHA256:${createHash('sha256').update(key).digest('base64').replace(/=+$/, '')}`;
-}
-
-function configuredFingerprints() {
-  return new Set((process.env.UNIKRAFT_SSH_HOST_FINGERPRINTS || '').split(',').map((value) => value.trim()).filter(Boolean));
-}
-
 function send(socket, message) {
   if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(message));
 }
@@ -67,10 +57,8 @@ async function resolveInstance(token, uuid, metro) {
 }
 
 async function openSession(socket, token, uuid, metro) {
-  const keyPath = process.env.UNIKRAFT_SSH_PRIVATE_KEY_PATH || '/run/secrets/unikraft_ssh_key';
-  const trusted = configuredFingerprints();
-  if (!trusted.size) throw new Error('服务器未配置 UNIKRAFT_SSH_HOST_FINGERPRINTS。');
-  const [privateKey, host] = await Promise.all([readFile(keyPath), resolveInstance(token, uuid, metro)]);
+  const host = await resolveInstance(token, uuid, metro);
+  const password = process.env.UNIKRAFT_SSH_PASSWORD || 'unikraft';
 
   const tlsSocket = connectTls({ host, port: 2222, servername: host, rejectUnauthorized: true });
   const ssh = new SshClient();
@@ -109,9 +97,8 @@ async function openSession(socket, token, uuid, metro) {
     tlsSocket.once('secureConnect', () => ssh.connect({
       sock: tlsSocket,
       username: 'root',
-      privateKey,
+      password,
       readyTimeout: 15000,
-      hostVerifier: (key) => trusted.has(fingerprint(key)),
     }));
   });
 
