@@ -86,3 +86,12 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+# Web SSH
+
+运行中的 Debian SSH 实例会显示“终端”按钮。应用服务器通过 Unikraft Cloud 的 TLS 端口 `2222` 建立 SSH 会话，浏览器不会接触 SSH 私钥。
+
+1. 将与实例 `PUBKEY` 匹配的私钥保存为 `secrets/unikraft_ssh_key`，只读挂载到容器。
+2. 将实例 SSH 主机公钥的 SHA-256 指纹配置到 `UNIKRAFT_SSH_HOST_FINGERPRINTS`。多个指纹使用逗号分隔，例如 `SHA256:abc...,SHA256:def...`。
+3. 反向代理必须支持 `/ws/ssh` 的 WebSocket Upgrade，并保留 `Host`、`X-Forwarded-Host` 和 `X-Forwarded-Proto` 请求头。
+
+容器不需要 `privileged`、`NET_ADMIN`、host network 或额外端口。未配置可信主机指纹时，终端会安全拒绝连接。
