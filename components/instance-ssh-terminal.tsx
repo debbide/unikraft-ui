@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { TerminalSquare } from 'lucide-react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -16,14 +16,14 @@ type ServerMessage =
 export function InstanceSshTerminal({ uuid, metro, name }: { uuid: string; metro: string; name: string }) {
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState('未连接');
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [container, setContainer] = useState<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (!open || !containerRef.current) return;
+    if (!open || !container) return;
     const terminal = new Terminal({ cursorBlink: true, convertEol: true, fontSize: 14, theme: { background: '#09090b' } });
     const fit = new FitAddon();
     terminal.loadAddon(fit);
-    terminal.open(containerRef.current);
+    terminal.open(container);
     fit.fit();
     terminal.focus();
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -33,13 +33,16 @@ export function InstanceSshTerminal({ uuid, metro, name }: { uuid: string; metro
       if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'resize', cols: terminal.cols, rows: terminal.rows }));
     };
     const resizeObserver = new ResizeObserver(sendResize);
-    resizeObserver.observe(containerRef.current);
+    resizeObserver.observe(container);
     const input = terminal.onData((data) => {
       if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'input', data }));
     });
 
-    setStatus('连接中');
-    socket.addEventListener('open', () => socket.send(JSON.stringify({ type: 'connect', uuid, metro })));
+    terminal.writeln('\x1b[90m正在连接 SSH 网关...\x1b[0m');
+    socket.addEventListener('open', () => {
+      terminal.writeln('\x1b[90m正在验证实例并建立 SSH 会话...\x1b[0m');
+      socket.send(JSON.stringify({ type: 'connect', uuid, metro }));
+    });
     socket.addEventListener('message', (event) => {
       try {
         const message = JSON.parse(String(event.data)) as ServerMessage;
@@ -56,8 +59,15 @@ export function InstanceSshTerminal({ uuid, metro, name }: { uuid: string; metro
         terminal.writeln('\r\n\x1b[31m终端服务返回了无效消息。\x1b[0m');
       }
     });
-    socket.addEventListener('close', () => setStatus((current) => current === '连接失败' ? current : '已断开'));
-    socket.addEventListener('error', () => setStatus('连接失败'));
+    socket.addEventListener('close', (event) => {
+      setStatus((current) => current === '连接失败' ? current : '已断开');
+      const reason = event.reason ? `：${event.reason}` : '';
+      terminal.writeln(`\r\n\x1b[33m连接已断开${reason}\x1b[0m`);
+    });
+    socket.addEventListener('error', () => {
+      setStatus('连接失败');
+      terminal.writeln('\r\n\x1b[31m无法连接 SSH 网关。请确认应用通过 node server.mjs 启动，并且反向代理已启用 /ws/ssh 的 WebSocket Upgrade。\x1b[0m');
+    });
 
     return () => {
       resizeObserver.disconnect();
@@ -65,11 +75,11 @@ export function InstanceSshTerminal({ uuid, metro, name }: { uuid: string; metro
       socket.close();
       terminal.dispose();
     };
-  }, [open, uuid, metro]);
+  }, [open, container, uuid, metro]);
 
   return (
     <>
-      <Button type="button" size="sm" variant="outline" title="打开 SSH 终端" onClick={() => setOpen(true)}>
+      <Button type="button" size="sm" variant="outline" title="打开 SSH 终端" onClick={() => { setStatus('连接中'); setOpen(true); }}>
         <TerminalSquare className="size-4" />
         终端
       </Button>
@@ -79,7 +89,7 @@ export function InstanceSshTerminal({ uuid, metro, name }: { uuid: string; metro
             <DialogTitle>{name} SSH 终端</DialogTitle>
             <DialogDescription className="text-zinc-400">{metro.toUpperCase()} · {status}</DialogDescription>
           </DialogHeader>
-          <div ref={containerRef} className="min-h-0 flex-1 overflow-hidden rounded-md border border-zinc-800 bg-zinc-950 p-2" />
+          <div ref={setContainer} className="min-h-0 flex-1 overflow-hidden rounded-md border border-zinc-800 bg-zinc-950 p-2" />
         </DialogContent>
       </Dialog>
     </>
