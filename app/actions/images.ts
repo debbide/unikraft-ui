@@ -266,7 +266,7 @@ async function listImageDetailsFromApi(
       const response = await fetchUnikraft<unknown>(
         "/v1/images",
         token,
-        {},
+        { cache: "no-store" },
         metro,
       );
       return normalizeRows(response)
