@@ -1,4 +1,4 @@
-FROM node:20-bullseye
+FROM node:20-bookworm
 
 RUN apt-get update && apt-get install -y curl ca-certificates docker.io git && \
     rm -rf /var/lib/apt/lists/*
