@@ -10,7 +10,7 @@ import { fetchUnikraft } from '@/lib/unikraft/client';
 import { getToken } from './auth';
 
 const execFileAsync = promisify(execFile);
-const CONVERTED_IMAGE_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:@/-]*converted-[a-zA-Z0-9._-]+(?::[a-zA-Z0-9._-]+)?$/;
+const CONVERTED_IMAGE_PATTERN = /.*/;
 
 function isMetroIndexReference(image: string) {
   return /^index\.[a-z0-9-]+\.unikraft\.cloud\//i.test(image.replace(/^oci:\/\//, '').trim());

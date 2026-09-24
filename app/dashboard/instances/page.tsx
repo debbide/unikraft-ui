@@ -36,7 +36,7 @@ export default async function InstancesPage() {
   const instances: Instance[] = [];
   const volumesByMetro: Record<string, { name: string; state?: string }[]> = {};
   // 实例页只需要镜像引用；避免为每个镜像额外执行 image get，缩短菜单切换等待时间。
-  const { images } = await listTemporaryImages({ includeSizes: false });
+  const { images } = await listTemporaryImages({ includeSizes: true });
   try {
     const results = await Promise.allSettled(
       METROS.map(metro => fetchUnikraft<InstanceResponse>(

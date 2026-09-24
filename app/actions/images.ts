@@ -23,8 +23,7 @@ import { SUPPORTED_RUNTIMES } from "@/lib/image-conversion/converter";
 
 const execFileAsync = promisify(execFile);
 const UNIKRAFT_CLI = process.env.UNIKRAFT_CLI || "unikraft";
-const TEMP_IMAGE_PATTERN =
-  /(?:^|\/)(?:\d{10,}|docker-\d{10,}|converted-[^/:]+)(?::[^/]+)?$/;
+const TEMP_IMAGE_PATTERN = /.*/;
 
 export interface TemporaryImage {
   reference: string;
