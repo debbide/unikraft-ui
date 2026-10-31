@@ -32,38 +32,42 @@ export default async function InstancesPage() {
     return <div>Unauthorized</div>;
   }
 
-  // 获取所有区的实例列表
+  // 获取所有区的实例列表、存储卷列表与镜像引用（全并发执行）
   const instances: Instance[] = [];
   const volumesByMetro: Record<string, { name: string; state?: string }[]> = {};
-  // 实例页只需要镜像引用；避免为每个镜像额外执行 image get，缩短菜单切换等待时间。
-  const { images } = await listTemporaryImages({ includeSizes: true });
+  let images: Awaited<ReturnType<typeof listTemporaryImages>>['images'] = [];
   try {
-    const results = await Promise.allSettled(
-      METROS.map(metro => fetchUnikraft<InstanceResponse>(
-        '/v1/instances',
-        token,
-        { cache: 'no-store' },
-        metro,
-      ).then(res => ({ metro, instances: res?.data?.instances || [] })))
-    );
+    const [imagesResult, instanceResults] = await Promise.all([
+      // 实例页只需要镜像引用；直接走纯 HTTP API 获取，避免启动 CLI 子进程和逐个执行 image get
+      listTemporaryImages({ includeSizes: false }),
+      Promise.allSettled(
+        METROS.map(metro => fetchUnikraft<InstanceResponse>(
+          '/v1/instances',
+          token,
+          { cache: 'no-store' },
+          metro,
+        ).then(res => ({ metro, instances: res?.data?.instances || [] })))
+      ),
+      Promise.all(METROS.map(async (metro) => {
+        try {
+          const result = await fetchUnikraft<VolumeResponse>('/v1/volumes', token, { cache: 'no-store' }, metro);
+          const volumes = result?.data?.volumes || result?.volumes || [];
+          volumesByMetro[metro] = volumes
+            .filter((volume): volume is Volume & { name: string; state: 'available' } => typeof volume.name === 'string' && volume.state === 'available')
+            .map((volume) => ({ name: volume.name, state: volume.state }));
+        } catch {
+          volumesByMetro[metro] = [];
+        }
+      })),
+    ]);
 
-    results.forEach(result => {
+    images = imagesResult.images;
+    instanceResults.forEach(result => {
       if (result.status === 'fulfilled') {
         const mapped = result.value.instances.map((inst) => ({ ...inst, metro: result.value.metro }));
         instances.push(...mapped);
       }
     });
-    await Promise.all(METROS.map(async (metro) => {
-      try {
-        const result = await fetchUnikraft<VolumeResponse>('/v1/volumes', token, {}, metro);
-        const volumes = result?.data?.volumes || result?.volumes || [];
-        volumesByMetro[metro] = volumes
-          .filter((volume): volume is Volume & { name: string; state: 'available' } => typeof volume.name === 'string' && volume.state === 'available')
-          .map((volume) => ({ name: volume.name, state: volume.state }));
-      } catch {
-        volumesByMetro[metro] = [];
-      }
-    }));
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     return <div className="text-red-500 p-8">获取实例列表失败: {message}</div>;

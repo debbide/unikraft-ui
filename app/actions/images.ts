@@ -301,6 +301,9 @@ export async function listTemporaryImages(options?: {
   const token = await getToken();
   if (!token) return { images: [], error: "Unauthorized" };
   try {
+    if (options?.includeSizes === false) {
+      return { images: await listImageDetailsFromApi(token) };
+    }
     return await withLogin(token, async (configPath, env) => {
       const { stdout } = await execFileAsync(
         UNIKRAFT_CLI,
